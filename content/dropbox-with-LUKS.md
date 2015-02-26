@@ -84,13 +84,4 @@ Done!
 4. [Tahoe-LAFS](https://tahoe-lafs.org/trac/tahoe-lafs/wiki)
 5. [CryptKeeper](https://apps.ubuntu.com/cat/applications/precise/cryptkeeper/)
 
-In pictures: 
-
-1. ![Step one](/images/1.png)
-2. ![Step Two](/images/2.png)
-3. ![Step Three](/images/3.png)
-4. ![Step Four](/images/4.png)
-5. ![Step Five](/images/5.png)
-6. ![Step Six](/images/6.png)
-
 ### Let's encrypt!
