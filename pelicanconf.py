@@ -17,7 +17,7 @@ TIMEZONE = 'Africa/Nairobi'
 PLUGINS = ['sitemap']
 
 # Set to True when testing locally
-RELATIVE_URLS = False
+RELATIVE_URLS = True
 
 
 # Feeds

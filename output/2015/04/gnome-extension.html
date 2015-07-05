@@ -5,9 +5,9 @@
       <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="canonical" href="http://prewired.pw/2015/02/New-GPG.html" />
+    <link rel="canonical" href="http://prewired.pw/2015/04/gnome-extension.html" />
 
-    <title>  Prewired &mdash; My GnuPG Transition
+    <title>  Prewired &mdash; Rocking it! GNOME3 Shell Extensions..
 </title>
 
       <link rel="icon" type="image/png" href="/favicon-196x196.png" sizes="196x196">
@@ -28,8 +28,8 @@
 
 
     <meta name="author" content="John Troon">
-    <meta name="description" content="I'm slowly transiting from my old GnuPG keys to a new one.">
-  <meta name="tags" contents="GPG, security, ">
+    <meta name="description" content="Some Tempting Gnome3 Shell Extensions...">
+  <meta name="tags" contents="Linux, ">
 </head>
 
 <body>
@@ -53,11 +53,11 @@
 </header> <!-- /.header -->  <div class="container">
   <div class="post full-post">
     <h1 class="post-title">
-      <a href="/2015/02/New-GPG.html" title="Permalink to My GnuPG Transition">My GnuPG Transition</a>
+      <a href="/2015/04/gnome-extension.html" title="Permalink to Rocking it! GNOME3 Shell Extensions..">Rocking it! GNOME3 Shell Extensions..</a>
     </h1>
     <ul class="list-inline">
       <li class="post-date">
-        <a class="text-muted" href="/2015/02/New-GPG.html" title="2015-02-12T16:28:00+03:00">Thu 12 February 2015</a>
+        <a class="text-muted" href="/2015/04/gnome-extension.html" title="2015-04-27T14:15:00+03:00">Mon 27 April 2015</a>
       </li>
       <li class="muted">&middot;</li>
       <li class="post-category">
@@ -71,41 +71,34 @@
         </li>
     </ul>
     <div class="post-content">
-      <h3>The old key, which I am transitional away from, is:</h3>
-<div class="highlight"><pre>pub  4096R/D5E28EE0 (0x192BA1E6D5E28EE0) 2014-02-22 
-John Ombagi (Linux, DB &amp; Infosec) &lt;ombagi@promaxted.com&gt;
-John Ombagi (Linux, DB &amp; Infosec) &lt;jayombagi@gmail.com&gt;
-Fingerprint=ACF5 FAFE 3C3D 4CE5 95D9  C31B 192B A1E6 D5E2 8EE0
+      <p>I don't really give a tinker's damn about your desktop, if you have a picture of a unicorn as your wallpaper or a really old picture of Hitler smiling, that's up to you. Though, sometimes I do care about having my files/folders arranged, in a way I can remember everything on a "where-is-X" basis, and adjusting system's default settings.</p>
+<p>What GNOME offers, even after a fresh install without tweaks, is satisfying. There are decent unbiased articles<sup>1</sup> written specifically about GNOME features and comparison made against KDE. Both Desktop-environments have their strengths and  weaknesses, choosing what fits you is kind of religious and experimental.</p>
+<p>The list of projects<sup>2</sup> covered under GNOME is long. Here, I simply searched for some <a href="https://extensions.gnome.org/">extensions</a> that are potentially helpful, below is a list of what I picked:</p>
+<ul>
+<li><a href="https://extensions.gnome.org/extension/97/coverflow-alt-tab/">Coverflow alt-tab</a> - Nice preview of the running applications when you use Alt+Tab.</li>
+<li><a href="https://extensions.gnome.org/extension/760/minimize-all/">Minimize all</a> - A lot of windows and sometimes you just want to see your desktop?</li>
+<li><a href="https://extensions.gnome.org/extension/815/simple-dock/">Simple dock</a> - Easy access to most used application?</li>
+<li><a href="https://extensions.gnome.org/extension/162/todo-list/">Todo list</a> - Easily distracted and want to keep track of activities to finish?</li>
+<li><a href="https://extensions.gnome.org/extension/442/drop-down-terminal/">Drop Down Terminal</a> - Just a bonus extension for getting a pseudo-terminal on the fly!</li>
+</ul>
+<p>No other extra configs required if you are using the "GNOME Tweak Tool" for the installs, apart from the <a href="https://extensions.gnome.org/extension/442/drop-down-terminal/">Drop Down Terminal</a> extension, which requires the <em>Vte library (version &gt;= 0.31)</em> and the <em>gir typelib</em>.. </p>
+<div class="highlight"><pre>install
+ On Fedora/Arch: <span class="s1">&#39;vte3&#39;</span> package
+ On Debian/Ubuntu:  <span class="s1">&#39;gir-1.2-vte-2.*&#39;</span> package <span class="o">(</span>not installed by default<span class="o">)</span>
+ On OpenSUSE: <span class="s1">&#39;typelib-1_0-Vte-2.*&#39;</span> package <span class="o">(</span>not installed by default<span class="o">)</span>
+
+Then, log out/restart.
 </pre></div>
 
 
-<h3>The new key, to which I am transitioning, is:</h3>
-<div class="highlight"><pre>pub  4096R/AD3A484C (0x7b85a886ad3a484c) 2014-11-10 
-John Ombagi &lt;ombagi@outlook.com&gt;
-John Ombagi (Troon) &lt;jayombagi@gmail.com&gt;
-Fingerprint=CC89 97A6 1F78 304A 7D91  C27F 7B85 A886 AD3A 484C
-</pre></div>
-
-
-<h3><a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/gpg-transition.txt">gpg-transition.txt</a></h3>
-<p>Contains detailed info about my GPG transition/revocation.</p>
-<h3><a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/sig1.txt">sig1.txt</a></h3>
-<p>Signature of the gpg-transition.txt using the old key 0x192BA1E6D5E28EE0</p>
-<h3><a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/sig2.txt">sig2.txt</a></h3>
-<p>Signature of the gpg-transition.txt using the new key 0x7b85a886ad3a484c</p>
-<h2>Updating</h2>
-<p>To fetch the full new key from a public key server using GnuPG, run:</p>
-<div class="highlight"><pre>    gpg --keyserver keys.gnupg.net --recv-key 0x7B85A886AD3A484C
-</pre></div>
-
-
-<p>If you have already validated my old key, you can then validate that the
-new key is signed by my old key:</p>
-<div class="highlight"><pre>    gpg --check-sigs 0x7B85A886AD3A484C
-</pre></div>
-
-
-<p>Just incase you need to clarify anything about my GnuPG keys, reach me via <strong>jayombagi at gmail dot com</strong></p>
+<p>If you ever build<sup>3</sup> your own extension, or find any other extension worth a try, share.. To share is divine!</p>
+<blockquote>
+<p>References:</p>
+<p><sup>1</sup> <a href="http://www.diffen.com/difference/GNOME_vs_KDE">http://www.diffen.com/difference/GNOME_vs_KDE</a></p>
+<p><sup>2</sup> <a href="https://wiki.gnome.org/Projects">https://wiki.gnome.org/Projects</a></p>
+<p><sup>3</sup> <a href="https://wiki.gnome.org/Projects/GnomeShell/Extensions/StepByStepTutorial">https://wiki.gnome.org/Projects/GnomeShell/Extensions/StepByStepTutorial</a></p>
+</blockquote>
+<p><img alt="Screenshot" src="/images/shot.png" title="Alt+Tab Gnome3 Shell Extension" /></p>
     </div>
   </div>
   <hr class="separator">
