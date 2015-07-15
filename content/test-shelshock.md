@@ -10,7 +10,7 @@ Below is a simple bash script I've been using to test for shellshock vulns in my
 
 Keep following updates from CVE and other Linux news portals. I've been using the script on CentOS 6.5 and Oracle Linux 6.5.. I do understand all bash versions through 4.3 are affected but I discovered even after patching my systems with the first fix updates, my Bash binary was somehow still affected until I did another update/upgrade.
 
-You can sample the script here below:
+------------------------------------------------
 
 ```bash
 #!/bin/sh
@@ -18,7 +18,7 @@ You can sample the script here below:
 # Adapted from Common Vuls DB
 # Additional tweaks by John Troony.
 
-# Some Color codes
+#Some Color codes
 red="\033[31m"
 green="\033[32m"
 blue="\033[34m"

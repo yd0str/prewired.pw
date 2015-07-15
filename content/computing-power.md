@@ -19,16 +19,31 @@ Having a high-end machine (Laptop/Desktop/Server) doesn't necessary mean you'll 
 So, what's the importance of having a laptop with 4 cores if only 1 core is operating while the rest of the cores sleep? I mean, it's like employing 4 employees and while 1 is working, the rest just eat and fart in your office.
 
 People who use their computers for basic computing like editing files, working with ledgers, watching a movie etc won't really notice any serious performance issues compared to a programmer compiling application from source code or a SysAdmin who is trying to compress and backup gigabytes of data.
-Simple Test
+
+## Simple Test
 
 As a simple test, I'm using my Laptop ( i7-2640M, sandy-bridge, 4 Cores each with 2.80 GHz) running Debian to compress two files with bzip2 then compare the results with pbzip2. Well, there is a performance note about bzip2 (block-sorting file compressor) on it's man page and pbzip2 is a parallel implementation of the bzip2 that uses pthreads and achieves near-linear speedup on SMP machines.
 
-## Using pbzip2 was faster compared to bzip2 and the following screen shots shows the CPU history for both respectively.
+![Compression Test](/images/1.png)
+
+Using pbzip2 was faster compared to bzip2 and the following screen shots shows the CPU history for both respectively.
 
 **pbzip2 CPU history:**
 
+![pbzip2 CPU history](/images/2.png)
+
+
 **bzip2 CPU history:**
-pbzip makes use of the four CPUs to compress the files and the result is far impressive compared to using bzip2. I've avoided the nitty gritty details of bzip2/pbzip since this is not a post about the tools. However, you can explore pbzip and set other options like Load average and Block size. I tried reading the files to be compressed into memory then split the compression work among the CPUs with pbzip and the performance was still good.
+
+![bzip2 CPU history](/images/3.png)
+
+`pbzip` makes use of the four CPUs to compress the files and the result is far impressive compared to using `bzip2`. I've avoided the nitty gritty details of bzip2/pbzip since this is not a post about the tools. However, you can explore pbzip and set other options like Load average and Block size. I tried reading the files to be compressed into memory then split the compression work among the CPUs with pbzip and the performance was still good.
+
+![pbzip Performance](/images/4.png)
+
+
+![pbzip Performance](/images/5.png)
+
 
 ## Conclusion:
 

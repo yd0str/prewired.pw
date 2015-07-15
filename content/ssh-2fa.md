@@ -7,7 +7,7 @@ Author: John Troon
 Summary: Using 2FA to protect SSH 
 
 
-Two-factor authentication adds a second level of authentication to an account log-in. When you have to enter only your username and one password, that's not considered a single-factor authentication. 2FA requires the user to have two out of three types of credentials before being able to access an account. The three types are:
+Two-factor authentication adds a second level of authentication to an account log-in. When you have to enter only your username and one password, that's considered as a single-factor authentication. 2FA requires the user to have two out of three types of credentials before being able to access an account. The three types are:
 
 *    Something you know, such as a Personal Identification Number (PIN), password, or a pattern
 *    Something you have, such as an ATM card or phone
@@ -20,9 +20,9 @@ Two-factor authentication adds a second level of authentication to an account lo
 Well, with SSH we can use Google Authenticator PAM module to add another level of security to the normal login. This can be a good idea if you have a cloud instance such as AWS services. I personally would like to endorse both our local robust cloud infrastructure built to support a wide range of applications, [KILI](http://www.kili.io) and [Angani](http://www.angani.co).
 
 
-Before setting up the 2FA, make sure you have the `google authenticator` app installed on your phone (Android?), you can get support on how to install the app in Android, Blackberry or Apple device [here](https://support.google.com/accounts/answer/1066447?hl=en)
+Before setting up the 2FA, make sure you have the `google authenticator` app installed on your phone, you can get support on how to install the app on Android, Blackberry or Apple device [here](https://support.google.com/accounts/answer/1066447?hl=en)
 
-Now, decide which account you want to setup the 2FA for, I mean, if you use a normal account, you'll not be able to login as root. (I love root :D ). If you love root like me, login as root and follow along. I've my "google authenticator" app installed on my Samsung with Android 4.2.2 and I'm using Ubuntu 14.x
+Now, decide which account you want to setup the 2FA for, I mean, if you use a normal account, you'll not be able to login as root. (I love root :D ). If you love root like me, login as root and follow along. I've my "google authenticator" app installed on my crappy Samsung phone running Android 4.2.2 and I'm setting up 2FA on Ubuntu 14.x
 
 -------------------------------------------------------
 
@@ -47,27 +47,33 @@ make install
 
 ### 2) Set up config files
 
-    a) Open `/etc/pam.d/sshd` with your favourite editor and add the following line 
+a) Open `/etc/pam.d/sshd` with your favourite editor and add the following line 
 
-    	`auth required pam_google_authenticator.so` 
+```
+auth required pam_google_authenticator.so
+``` 
 
-    make sure to the save changes.
+Make sure to save the changes.
 
-    b) Then open `/etc/ssh/sshd_config` with your favourite file editor (again) and look for 
+b) Then open `/etc/ssh/sshd_config` with your favourite file editor (again) and search for 
 
-	`ChallengeResponseAuthentication no` 
+```
+ChallengeResponseAuthentication no
+``` 
 
-    replace the `no`  with a `yes` and save the changes.
+replace the `no` with a `yes` and save the changes.
 
 ### 3) Setup the google-authenticator
 
-Switch to the account to set-up and enter the following:
+Still on the account to set-up, enter the command on the terminal:
 
-`google-authenticator`
+```
+google-authenticator
+```
 
 This will enable you setup the google-authenticator through a series of yes (y) and no (n) questions. 
 Make sure you select `time-based` for 	better security service, and save updates in the default file... 
-You can follow along the other questions (they are easy pizzy and depends with your preferences).
+You can follow along the other questions (they are easy peasy and depends with your preferences).
 
 NB: after chosing `Y` in the first option (authentication tokens to be time-based), a new secret key, 
 verification code and an emergency scratch codes are generated with barcode also. 
@@ -77,14 +83,14 @@ After setting up the options to your preference(s), restart the ssh-server:
 
 Make sure on your system, the time is correctly set with the same time zone on your phone. I don't want to overemphasis on this, but you 	 need ntpd runninig on your system. 
 
-On Ubuntu `apt-get install ntp` while on CentOS `yum -y install ntp` then start `ntpd` and enable it on 	 System boot.
+On Ubuntu `apt-get install ntp` while on CentOS `yum -y install ntp` then start `ntpd` and enable it on System boot.
 
 ### 4) Linking the APP on our	 phone...
 
-Open the google-authenticator app on your phone and click the *add on account* option, then tap on the *Enter key provided* and enter your secret key.
+Open the google-authenticator app on your phone and select the *add on account* option, then tap on the *Enter key provided* and enter your secret key.
 
 NB: You can choose *scan a barcode* and scan the generated barcode but that didn't work for me.
 
 ### 5) Now test the set up....
 Try login from a diffrent computer... You should get a verification prompt before the password/login-in for guys using ssh-keys.
- That's it! Easy! uh!
+*Done!!*

@@ -5,9 +5,9 @@
       <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="canonical" href="../../2015/02/New-GPG.html" />
+    <link rel="canonical" href="../../2014/06/disk-benchmark.html" />
 
-    <title>  Prewired &mdash; My GnuPG Transition
+    <title>  Prewired &mdash; Disk benchmark with bonnie in Linux
 </title>
 
       <link rel="icon" type="image/png" href="/favicon-196x196.png" sizes="196x196">
@@ -28,8 +28,8 @@
 
 
     <meta name="author" content="John Troon">
-    <meta name="description" content="I'm slowly transiting from my old GnuPG keys to a new one.">
-  <meta name="tags" contents="GPG, security, ">
+    <meta name="description" content="Disk benchmarking on Linux">
+  <meta name="tags" contents="repost, Linux, ">
 </head>
 
 <body>
@@ -53,15 +53,15 @@
 </header> <!-- /.header -->  <div class="container">
   <div class="post full-post">
     <h1 class="post-title">
-      <a href="/2015/02/New-GPG.html" title="Permalink to My GnuPG Transition">My GnuPG Transition</a>
+      <a href="/2014/06/disk-benchmark.html" title="Permalink to Disk benchmark with bonnie in Linux">Disk benchmark with bonnie in Linux</a>
     </h1>
     <ul class="list-inline">
       <li class="post-date">
-        <a class="text-muted" href="/2015/02/New-GPG.html" title="2015-02-12T16:28:00+03:00">Thu 12 February 2015</a>
+        <a class="text-muted" href="/2014/06/disk-benchmark.html" title="2014-06-24T08:00:00+03:00">Tue 24 June 2014</a>
       </li>
       <li class="muted">&middot;</li>
       <li class="post-category">
-        <a href="../../category/linux.html">Linux</a>
+        <a href="../../category/repost-linux.html">repost, Linux</a>
       </li>
         <li class="muted">&middot;</li>
         <li>
@@ -71,41 +71,43 @@
         </li>
     </ul>
     <div class="post-content">
-      <h3>The old key, which I am transitional away from, is:</h3>
-<div class="highlight"><pre>pub  4096R/D5E28EE0 (0x192BA1E6D5E28EE0) 2014-02-22 
-John Ombagi (Linux, DB &amp; Infosec) &lt;ombagi@promaxted.com&gt;
-John Ombagi (Linux, DB &amp; Infosec) &lt;jayombagi@gmail.com&gt;
-Fingerprint=ACF5 FAFE 3C3D 4CE5 95D9  C31B 192B A1E6 D5E2 8EE0
+      <p><em>bonnie++</em> is a different tool compared to other disk testing tools, which are probably included in other performance monitoring tools like <code>vmstat</code> just to mention the most common one on any Linux install.</p>
+<p>It runs a performance test of the filesystem I/O and uses C library calls hence simulating non exaggerated results. It writes 8KB blocks to estimate maximum sustained rate of transfer. To make results interesting and reliable, it cycles through rewriting and rereading to provide BEST simulation of filesystem usage.</p>
+<p>After installing bonnie, all the details of the tests performed by Bonnie++ are contained in the file. <code>/usr/share/doc/bonnie++/readme.html</code></p>
+<p>For more details on usage, use <code>man bonnie++</code></p>
+<blockquote>
+<p>NB: Despite the fact his tool is to aid in detecting bottlenecks with the Disks, it can cause a serious I/O contention while running. So don't run it on a production system that is live.</p>
+</blockquote>
+<p>Below is an output from my Desktop with a T4300 dual processor (2100 MHz, Bus speed 800 MHz; GNU/Linux 3.13.0-27-generic Kernel, x86_64).</p>
+<hr />
+<div class="highlight"><pre>Writing a byte at a <span class="nb">time</span>…done
+Writing intelligently…done
+Rewriting…done
+Reading a byte at a <span class="nb">time</span>…done
+Reading intelligently…done
+start ‘em…done…done…done…done…done…
+Create files in sequential order…done.
+Stat files in sequential order…done.
+Delete files in sequential order…done.
+Create files in random order…done.
+Stat files in random order…done.
+Delete files in random order…done.
+Version 1.97 ——Sequential Output—— –Sequential Input- –Random-
+Concurrency <span class="m">1</span> -Per Chr- –Block– -Rewrite- -Per Chr- –Block– –Seeks–
+Machine Size K/sec %CP K/sec %CP K/sec %CP K/sec %CP K/sec %CP /sec %CP
+warlord 4G <span class="m">232</span> <span class="m">97</span> <span class="m">47643</span> <span class="m">12</span> <span class="m">14893</span> <span class="m">4</span> <span class="m">819</span> <span class="m">99</span> <span class="m">35599</span> <span class="m">4</span> 89.7 2
+Latency 70015us 1807ms 1637ms 33484us 235ms 667ms
+Version 1.97 ——Sequential Create—— ——–Random Create——–
+warlord -Create– –Read— -Delete– -Create– –Read— -Delete–
+files /sec %CP /sec %CP /sec %CP /sec %CP /sec %CP /sec %CP
+<span class="m">16</span> <span class="m">9025</span> <span class="m">21</span> +++++ +++ <span class="m">26989</span> <span class="m">51</span> <span class="m">23112</span> <span class="m">52</span> +++++ +++ <span class="m">26063</span> 52
+Latency 84074us 966us 1410us 118us 2034us 2684us
+1.97,1.97,warlord,1,1402393673,4G,,232,97,47643,12,14893,4,819,99,35599,4,89.7,2,16,,,,,
+
+9025,21,+++++,+++,26989,51,23112,52,+++++,+++,26063,52,70015us,1807ms,1637ms,
+
+33484us,235ms,667ms,84074us,966us,1410us,118us,2034us,2684us
 </pre></div>
-
-
-<h3>The new key, to which I am transitioning, is:</h3>
-<div class="highlight"><pre>pub  4096R/AD3A484C (0x7b85a886ad3a484c) 2014-11-10 
-John Ombagi &lt;ombagi@outlook.com&gt;
-John Ombagi (Troon) &lt;jayombagi@gmail.com&gt;
-Fingerprint=CC89 97A6 1F78 304A 7D91  C27F 7B85 A886 AD3A 484C
-</pre></div>
-
-
-<h3><a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/gpg-transition.txt">gpg-transition.txt</a></h3>
-<p>Contains detailed info about my GPG transition/revocation.</p>
-<h3><a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/sig1.txt">sig1.txt</a></h3>
-<p>Signature of the gpg-transition.txt using the old key 0x192BA1E6D5E28EE0</p>
-<h3><a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/sig2.txt">sig2.txt</a></h3>
-<p>Signature of the gpg-transition.txt using the new key 0x7b85a886ad3a484c</p>
-<h2>Updating</h2>
-<p>To fetch the full new key from a public key server using GnuPG, run:</p>
-<div class="highlight"><pre>    gpg --keyserver keys.gnupg.net --recv-key 0x7B85A886AD3A484C
-</pre></div>
-
-
-<p>If you have already validated my old key, you can then validate that the
-new key is signed by my old key:</p>
-<div class="highlight"><pre>    gpg --check-sigs 0x7B85A886AD3A484C
-</pre></div>
-
-
-<p>Just incase you need to clarify anything about my GnuPG keys, reach me via <strong>jayombagi at gmail dot com</strong></p>
     </div>
   </div>
   <hr class="separator">
