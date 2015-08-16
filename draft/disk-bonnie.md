@@ -1,22 +1,25 @@
-Disk benchmark with bonnie in Linux
-June 26, 2014
+Title: Disk benchmark with bonnie in Linux
+Category: repost, Linux
+Date: 2014-6-24 8:00
+Slug: disk-benchmark
+Tags: repost, Linux
+Author: John Troon
+Summary: Disk benchmarking on Linux
 
+*bonnie++* is a different tool compared to other disk testing tools, which are probably included in other performance monitoring tools like `vmstat` just to mention the most common one on any Linux install.
 
+It runs a performance test of the filesystem I/O and uses C library calls hence simulating non exaggerated results. It writes 8KB blocks to estimate maximum sustained rate of transfer. To make results interesting and reliable, it cycles through rewriting and rereading to provide BEST simulation of filesystem usage.
 
-bonnie++ is a different tool compared to other disk testing tools, which are probably included in other performance monitoring tools like vmstat just to mention.
+After installing bonnie, all the details of the tests performed by Bonnie++ are contained in the file. `/usr/share/doc/bonnie++/readme.html`
 
-it runs a performance test of the filesystem I/O and uses C library calls hence simulating non exaggerated results. It writes 8KB blocks to estimate maximum sustained rate of transfer. To make results interesting and reliable, it cycles through rewriting and rereading to provide BEST simulation of filesystem usage.
+For more details on usage, use `man bonnie++`
 
-After installing bonnie, all the details of the tests performed by Bonnie++ are contained in the file. /usr/share/doc/bonnie++/readme.html
-
-For more details on usage, use man bonnie++
-
-NB: Despite the fact his tool is to aid in detecting bottlenecks with the Disks, it can cause a serious I/O contention while running. So don't run it in production system in peak usages.
+> NB: Despite the fact his tool is to aid in detecting bottlenecks with the Disks, it can cause a serious I/O contention while running. So don't run it on a production system that is live.
 
 Below is an output from my Desktop with a T4300 dual processor (2100 MHz, Bus speed 800 MHz; GNU/Linux 3.13.0-27-generic Kernel, x86_64).
 
 -------------------------------------------------------------------------------------------------------------------------
-
+```bash
 Writing a byte at a time…done
 Writing intelligently…done
 Rewriting…done
@@ -44,4 +47,5 @@ Latency 84074us 966us 1410us 118us 2034us 2684us
 9025,21,+++++,+++,26989,51,23112,52,+++++,+++,26063,52,70015us,1807ms,1637ms,
 
 33484us,235ms,667ms,84074us,966us,1410us,118us,2034us,2684us
+```
 
