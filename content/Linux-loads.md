@@ -22,9 +22,9 @@ Obviously, when the load averages rise above 1 there is something in the system 
 
 These data can be monitored through:
 ```bash
-uptime
-top
-vmstat
+$ uptime
+$ top
+$ vmstat
 ```
 uptime somehow has a nice output of the load average data.
 

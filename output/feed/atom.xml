@@ -1,0 +1,666 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><title>Prewired</title><link href="http://prewired.pw/" rel="alternate"></link><link href="http://prewired.pw/feed/atom.xml" rel="self"></link><id>http://prewired.pw/</id><updated>2015-10-20T15:20:00+03:00</updated><entry><title>Code Caving in a PE file : Part one</title><link href="http://prewired.pw/2015/10/code-caving-part1.html" rel="alternate"></link><updated>2015-10-20T15:20:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2015-10-20:2015/10/code-caving-part1.html</id><summary type="html">&lt;h3&gt;Adding Code to an existing Section&lt;/h3&gt;
+&lt;p&gt;This is going to be a quick dirty code caving guide for anyone interested, although I don't plan to cover the basic details like digging up the Win32 API and the PE file format. Well, I'll make references to existing guides you can use to get familiarized with any concept or tool I think is important. You don't really need to be an assembly expert to get started but if you already understand the PE file format and the commonly used Win32 APIs you are on a roll.&lt;/p&gt;
+&lt;p&gt;I intended to make three separate guides on code caving, Part one : Adding to an existing section, Part two: enlarging an existing section and lastly Part three : adding a section on a PE file.... Later on I'd possibly do a post on Elf file formats as well. This is the first part and it's easy.&lt;/p&gt;
+&lt;p&gt;Follow, this is a "Do With Me" guide and it is straight to the point avoiding the nitty-gritty stories.... On this post, I've made use of the following tools and setup:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;WINE on Arch-Linux &lt;/li&gt;
+&lt;li&gt;OllyDbg Ver 1.10  (Debbuger)&lt;/li&gt;
+&lt;li&gt;LordPE Deluxe (PE file editor)&lt;/li&gt;
+&lt;li&gt;Gnome-calculator (programming mode)&lt;/li&gt;
+&lt;li&gt;Virtual-box running Windows XP SP3 (to test the modified files)&lt;/li&gt;
+&lt;li&gt;WxHexEditor (Hex editor)&lt;/li&gt;
+&lt;li&gt;Notes (scrap book)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;You can follow along with your own setup (Windows/Linux) as long as you have the main tools for this specific blog post, OllyDbg, LordPE and any Hex-editor. For steps that are OS specific, I'll point out.&lt;/p&gt;
+&lt;p&gt;Reverse Engineering some Programs/Softwares might be against the law or provoke someone (&lt;a href="http://seclists.org/isn/2015/Aug/4"&gt;try Oracle&lt;/a&gt;), please make sure you have the proper rights to use the file you choose. In this case, I'll be using HeidiSql for no good reason other than it's a valid Windows executable file. You can get the same file I'm using and some of the tools on my &lt;a href="https://github.com/JohnTroony/PE-CodeCaving"&gt;Git Repo&lt;/a&gt; or the links at the end of this page.&lt;/p&gt;
+&lt;h3&gt;Step one : Locate the cave...&lt;/h3&gt;
+&lt;p&gt;Load the executable file on &lt;code&gt;LordPE&lt;/code&gt; and View the available Sections..&lt;/p&gt;
+&lt;p&gt;A) Click on &lt;code&gt;PE Editor&lt;/code&gt; and select the file to load. It must be a valid PE file.
+&lt;img alt="Click on PE Editor and choose a file to load" src="/images/step1.png" title="Click on PE Editor and choose a file to load" /&gt;&lt;/p&gt;
+&lt;p&gt;B) Once Loaded, note down the &lt;code&gt;EntryPoint&lt;/code&gt;, this is the address where execution will start to flow when you run the executable you've loaded on LordPE. Also note the &lt;code&gt;imageBase&lt;/code&gt; which represents the preferred starting address (virtual address) of the executable when it is loaded into memory.
+&lt;img alt="A new window will show" src="/images/step2.png" title="A new window appears." /&gt;
+&lt;img alt="Note ImageBase and EntryPoint" src="/images/notes.png" title="Note EntryPoint and ImageBase" /&gt;&lt;/p&gt;
+&lt;p&gt;C) Now to view Sections available on the loaded file, click &lt;code&gt;Sections&lt;/code&gt;. A section table should appear.
+&lt;img alt="Click on sections " src="/images/step3.png" title="Click on Sections" /&gt;&lt;/p&gt;
+&lt;p&gt;The sections that are most commonly present in an executable are:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Executable Code Section, named .text (Microsoft) or CODE (Borland)&lt;/li&gt;
+&lt;li&gt;Data Sections, named .data, .rdata, or .bss (Microsoft) or DATA (Borland)&lt;/li&gt;
+&lt;li&gt;Resources Section, named .rsrc&lt;/li&gt;
+&lt;li&gt;Export Data Section, named .edata&lt;/li&gt;
+&lt;li&gt;Import Data Section, named .idata&lt;/li&gt;
+&lt;li&gt;Debug Inion Section, named .debug&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The names are actually irrelevant as they are ignored by the OS and are present only for the convenience of the programmer. PE file on disk is the same on the Memory. However it is not copied exactly into memory, The windows loader decides which parts need mapping in memory and
+omits any others. Data that is not mapped in is placed at the end of the file past any parts that will be mapped in e.g. Debug inion.&lt;/p&gt;
+&lt;p&gt;Also the location of an item in the file on disk will often differ from its location once loaded into memory because of the page-based virtual memory management that windows uses. When the sections are loaded into RAM they are aligned to fit to 4Kb memory pages, each section starting on a new page. Virtual memory is explained below.&lt;/p&gt;
+&lt;p&gt;The default page size for Windows is 4096 bytes (1000h) and it would be wasteful to align executables to a 4Kb page boundary on disk as that would make them significantly bigger than necessary. Because of this, the PE header has two different alignment fields; Section alignment and file alignment. Section alignment is how sections are aligned in memory as above. File alignment (usually 512 bytes or 200h) is how sections are aligned in the file on disk and is a multiple of disk sector size in order to optimize the loading process.&lt;/p&gt;
+&lt;p&gt;Since we want to add executable code on the file, we are interested with the &lt;code&gt;Executable Section&lt;/code&gt;, which in our case is &lt;code&gt;CODE&lt;/code&gt;. Comparing the &lt;code&gt;VSize&lt;/code&gt; (Virtual-size) to &lt;code&gt;Rsize&lt;/code&gt; ( Raw-size), we realize the Section &lt;code&gt;CODE&lt;/code&gt; is a little bit large on disk compared to when it's mapped in memory.
+&lt;img alt="Section CODE " src="/images/step3-highlighted.png" title="Executable Section, CODE" /&gt;&lt;/p&gt;
+&lt;p&gt;This means the section &lt;code&gt;CODE&lt;/code&gt; is padded with 00 at the end while on disk. This is where we are interested to add our code..... In other words, we have found a cave we can use.&lt;/p&gt;
+&lt;p&gt;D) Before we get too excited, let's confirm if this is a valid cave, note that section &lt;code&gt;DATA&lt;/code&gt; starts at offset &lt;code&gt;A200&lt;/code&gt;, this should be immediately after the end of section &lt;code&gt;CODE&lt;/code&gt; (Check value of &lt;code&gt;ROffset&lt;/code&gt; at Section &lt;code&gt;DATA&lt;/code&gt; on the Section Table)&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Load Hex editor " src="/images/step4.png" title="Go to offset A200 on Hex-editor" /&gt;&lt;/p&gt;
+&lt;p&gt;Alright, we have a trail of &lt;code&gt;00&lt;/code&gt; padded at the end of section CODE.
+&lt;img alt="Our Cave " src="/images/step4b.png" title="Notice the padded 00 at the end of section CODE" /&gt;&lt;/p&gt;
+&lt;p&gt;Just before Section &lt;code&gt;DATA&lt;/code&gt; starts (at offset A200) we can confirm there is series of &lt;code&gt;00&lt;/code&gt; padded at the end of section &lt;code&gt;CODE&lt;/code&gt;.. Choose the offset to add code from the found cave, I'll be adding code at &lt;code&gt;A140&lt;/code&gt;. Now you can sip whatever you are drinking and continue...&lt;/p&gt;
+&lt;h3&gt;Step Two : Adding Code on our found Cave&lt;/h3&gt;
+&lt;p&gt;Using Gnome-calculator in programming mode, we can calculate the size of the cave. The range of offset is from &lt;code&gt;A130&lt;/code&gt; to &lt;code&gt;A1FF&lt;/code&gt; and the difference is &lt;code&gt;CF&lt;/code&gt; (&lt;code&gt;A1FF−A130 = CF&lt;/code&gt;). This means our code can't be more than 207 bytes (0xCF).
+&lt;img alt="Cave Size " src="/images/cavesize.png" title="Size of the Cave" /&gt;&lt;/p&gt;
+&lt;p&gt;A few things you need to know as from the section table:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;EntryPoint = 0000A5F8&lt;/li&gt;
+&lt;li&gt;ImageBase = 00400000&lt;/li&gt;
+&lt;li&gt;ROffset of where I'm adding my extra code = 0000A140&lt;/li&gt;
+&lt;li&gt;Virtual offset of section &lt;code&gt;CODE&lt;/code&gt; (VOffset) = 00001000&lt;/li&gt;
+&lt;li&gt;Raw offset of section &lt;code&gt;CODE&lt;/code&gt; (ROffset) = 00000400&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;img alt="CODE section " src="/images/code.png" title="CODE section" /&gt;&lt;/p&gt;
+&lt;p&gt;We know the &lt;code&gt;EntryPoint&lt;/code&gt; (represents the relative virtual address at which the loader will begin execution) and the &lt;code&gt;ImageBase&lt;/code&gt; (represents the preferred starting address of the executable when it is loaded into memory). &lt;/p&gt;
+&lt;p&gt;Relative Virtual Address (RVA): The offset in memory relative to the ImageBase. We need to calculate the &lt;code&gt;RVA&lt;/code&gt; of where I intend to add my extra code using OllyDbg. &lt;/p&gt;
+&lt;p&gt;Formula for getting RVA :&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;RVA = ROffset of where I'm adding my code - ROffset of the section CODE + VOffset of section CODE + ImageBase&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;RVA = 0000A140 - 00000400 + 00001000 + 00400000&lt;/li&gt;
+&lt;li&gt;RVA = 40AD40&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;img alt="Calculate RVA " src="/images/rva.png" title="Calculate RVA" /&gt;&lt;/p&gt;
+&lt;p&gt;Now open OllyDbg and go to the section where we want to add the code (Press Ctrl + G and enter 40AD40), hit space-bar to add the extra Assembly code line by line while clicking assemble. In my case, since I'm using a Windows SP3, I'll add a &lt;a href="http://shell-storm.org/shellcode/files/shellcode-739.php"&gt;shellcode from shell-storm&lt;/a&gt; that starts the calculator application. &lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="nf"&gt;main&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="kt"&gt;int&lt;/span&gt; &lt;span class="n"&gt;argc&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="kt"&gt;char&lt;/span&gt; &lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="n"&gt;argv&lt;/span&gt;&lt;span class="p"&gt;[])&lt;/span&gt;
+&lt;span class="p"&gt;{&lt;/span&gt;
+    &lt;span class="kt"&gt;char&lt;/span&gt; &lt;span class="n"&gt;shellcode&lt;/span&gt;&lt;span class="p"&gt;[]&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt;         
+        &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\x31\xC9&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;                &lt;span class="c1"&gt;// xor ecx,ecx        &lt;/span&gt;
+        &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\x51&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;                    &lt;span class="c1"&gt;// push ecx        &lt;/span&gt;
+        &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\x68\x63\x61\x6C\x63&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;    &lt;span class="c1"&gt;// push 0x636c6163        &lt;/span&gt;
+        &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\x54&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;                    &lt;span class="c1"&gt;// push dword ptr esp        &lt;/span&gt;
+        &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\xB8\xC7\x93\xC2\x77&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;    &lt;span class="c1"&gt;// mov eax,0x77c293c7        &lt;/span&gt;
+        &lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="se"&gt;\xFF\xD0&lt;/span&gt;&lt;span class="s"&gt;&amp;quot;&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;               &lt;span class="c1"&gt;// call eax         &lt;/span&gt;
+
+    &lt;span class="p"&gt;((&lt;/span&gt;&lt;span class="kt"&gt;void&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;*&lt;/span&gt;&lt;span class="p"&gt;)())&lt;/span&gt;&lt;span class="n"&gt;shellcode&lt;/span&gt;&lt;span class="p"&gt;)();&lt;/span&gt;
+
+    &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;I modified the shellcode a bit to jump back to the original EntryPoint after starting the calculator. So what I'll enter on OllyDbg is a little bit different.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="nf"&gt;xor&lt;/span&gt; &lt;span class="no"&gt;ecx&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="no"&gt;ecx&lt;/span&gt;        
+&lt;span class="no"&gt;push&lt;/span&gt; &lt;span class="no"&gt;ecx&lt;/span&gt;        
+&lt;span class="no"&gt;push&lt;/span&gt; &lt;span class="mi"&gt;0x636c6163&lt;/span&gt;        
+&lt;span class="no"&gt;push&lt;/span&gt; &lt;span class="no"&gt;esp&lt;/span&gt;        
+&lt;span class="no"&gt;mov&lt;/span&gt; &lt;span class="no"&gt;eax&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;0x77c293c7&lt;/span&gt;        
+&lt;span class="no"&gt;call&lt;/span&gt; &lt;span class="no"&gt;eax&lt;/span&gt; 
+&lt;span class="no"&gt;xor&lt;/span&gt; &lt;span class="no"&gt;eax&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="no"&gt;eax&lt;/span&gt;
+&lt;span class="nf"&gt;mov&lt;/span&gt; &lt;span class="no"&gt;eax&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="mi"&gt;0040&lt;/span&gt;&lt;span class="no"&gt;A5F8&lt;/span&gt;
+&lt;span class="nf"&gt;jmp&lt;/span&gt; &lt;span class="no"&gt;eax&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;Press Ctrl + G and enter 40AD40 (go to our RVA so we can add the additional code)
+&lt;img alt="go to RVA" src="/images/goto.png" title="go-to RVA" /&gt;&lt;/p&gt;
+&lt;p&gt;Hit Space-bar and add the first line of the assembly code and click on Assemble.
+&lt;img alt="Add code" src="/images/addasma.png" title="Add code" /&gt;&lt;/p&gt;
+&lt;p&gt;Keep on adding the code till you finish the list line and then close the adding window.
+&lt;img alt="Add code" src="/images/addasmb.png" title="Add code" /&gt;&lt;/p&gt;
+&lt;p&gt;Right-click, select "Copy to executable" and choose "All modifications"
+&lt;img alt="Add code" src="/images/addasm3.png" title="Add code" /&gt;&lt;/p&gt;
+&lt;p&gt;CLick on "Copy all" on the new window that pops out.
+&lt;img alt="Add code" src="/images/addasm4.png" title="Add code" /&gt;&lt;/p&gt;
+&lt;p&gt;Another window will pop out, close it and you should see a similar window as the one below, accept by clicking "yes" and save the changes with a new filename. Close OllyDbg, we are done with it.&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Add code" src="/images/addasm5.png" title="Add code" /&gt;&lt;/p&gt;
+&lt;p&gt;We are almost done, we will change the EntryPoint to the address that has our new code and return back to the original EntryPoint i.e 0000A5F8. after execution of the added code. On LordPE change EntryPoint to 0000AD40 i.e. &lt;code&gt;0040AD40 - ImageBase(00400000)&lt;/code&gt; and click on save.&lt;/p&gt;
+&lt;p&gt;&lt;img alt="New EntryPoint" src="/images/newEPx.png" title="New EntryPoint" /&gt;&lt;/p&gt;
+&lt;p&gt;If we compare our code cave segment on our Hex-editor before and after addition of the assembly code, you should be able to see a difference.&lt;/p&gt;
+&lt;p&gt;BEFORE
+&lt;img alt="HexEditor before asm added" src="/images/CMP1.png" title="HexEditor before asm added" /&gt;&lt;/p&gt;
+&lt;p&gt;AFTER
+&lt;img alt="HexEditor after asm added" src="/images/CMP2.png" title="HexEditor after asm added" /&gt;&lt;/p&gt;
+&lt;p&gt;Awesome, now lets test the modified binary on a running XP SP3. We expect it to start calculator and when closed the application should continue with the normal execution (in this case it's an installer).&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Run on Windows" src="/images/run1.png" title="Application when on XP SP3" /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Run on Windows" src="/images/run2.png" title="Application when on XP SP3" /&gt;&lt;/p&gt;
+&lt;p&gt;We are done! I'll create some time and do part-two using a different Executable. Think of all the cool things you can incorporate... Don't be limited to this guide, do more reading and think outside the box :P &lt;/p&gt;
+&lt;p&gt;For example, you can generate a shellcode using Metasploit and use it instead of the 16 bytes Calc.exe shellcode and instead of hijacking the EntryPoint, you can hijack any jmp instruction to your shellcode and return to the original jmp address etc&lt;/p&gt;
+&lt;p&gt;References:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/JohnTroony/PE-CodeCaving/raw/master/Tools%20%26%20Files/Bin_Portable_Executable.pdf"&gt;Portable Executable File  Compendium v11 by Goppit&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://code.google.com/p/corkami/wiki/PE"&gt;the Portable Executable  on Windows by corkami&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="http://www.codeproject.com/Articles/20240/The-Beginners-Guide-to-Codecaves"&gt;The Beginners Guide to Codecaves&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://zeros.googlecode.com/files/pecoff_v8.pdf"&gt;pecoff v8 (PDF)&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="http://bit.ly/WP9vgm"&gt;Welcome to theForger's Win32 API Tutorial (zip file)&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="http://mh-nexus.de/en/hxd"&gt;HxD - Freeware Hex Editor and Disk Editor&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;For Tools and other files I've used, check my &lt;a href="https://github.com/JohnTroony/PE-CodeCaving"&gt;Git repositoryy&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</summary><category term="Reverse Engineering"></category><category term="AV evasion"></category><category term="infosec"></category></entry><entry><title>Do we still need AntiVirus protection?</title><link href="http://prewired.pw/2015/10/are-AV-still-useful.html" rel="alternate"></link><updated>2015-10-10T11:41:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2015-10-10:2015/10/are-AV-still-useful.html</id><summary type="html">&lt;p&gt;Antivirus (AV) softwares by design are supposed to protect the users from Malware infections; they act as a preventive countermeasure for Malware infections. The AV vendors are always tirelessly trying to analyze new Malware samples and update their products with latest Malware signatures.&lt;/p&gt;
+&lt;h3&gt;Protection is King but detection is Kong..&lt;/h3&gt;
+&lt;p&gt;AV software uses various techniques to identify any malicious program/file, the level of self-protection in these malicious programs goes down to how skilled the VXer is and their goal...&lt;/p&gt;
+&lt;p&gt;Basically, for an AV product to determine if a program/file is malicious, it will do the following:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;A static scan using a set of signatures and types of packers used, if any.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Sandbox and Heuristics - runtime analysis on some sort of OS emulation to determine what the program will do upon execution.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Bypassing all of the above AV detection process is easy, using crypters, custom payload encoders and packers; determining if the executable is running in an AV OS emulator or a real OS before executing the payload, setting timers for payload execution, killing the AV itself and so many other ways... e.g. check the &lt;code&gt;gamer.exe&lt;/code&gt; I created to evade AV detection using simple &lt;code&gt;custom tricks&lt;/code&gt; and a &lt;code&gt;Metasploit payload&lt;/code&gt; :P &lt;/p&gt;
+&lt;p&gt;&lt;img alt="Sample Binary I crafted to evade AV" src="/images/vt.png" title="Virust Total result" /&gt;
+&lt;a href="https://www.virustotal.com/en/file/B7059AB990802D181E02CD25B667F25A43FF541E17EDC8C9F330F3F9CC81DC2A/analysis]"&gt;virustotal.com/en/file/B7059AB990802D181E02CD25B667F25A43FF541E17EDC8C9F330F3F9CC81DC2A/analysis&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Sample Binary I crafted to evade AV" src="/images/metascan.png" title="MetaScan - OPSWAT results" /&gt;
+&lt;a href="https://www.metascan-online.com/#!/results/file/9195e677c01f45d68defced6a34dad0c/regular"&gt;metascan-online.com/#!/results/file/9195e677c01f45d68defced6a34dad0c/regular&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;Some sophisticated VXers use advance obscure techniques to avoid AV detection like taking advantage of some undocumented OS functionality or a 0day. No matter how good you think your AV vendor is trying to protect you, if their detection rate of these new rising Malware patterns is not high, you are living on false hope.&lt;/p&gt;
+&lt;p&gt;A good AV product, should be proactive, able to detect new Malware variants and neutralize such threats... So, are AV vendors able to protect users from these rapid evolution of Malware?&lt;/p&gt;
+&lt;h3&gt;The AV Industry : Money, Money, Money...&lt;/h3&gt;
+&lt;p&gt;The motivation behind the AV industry is money and the same motivation is driving VXers too. Users on the other hand feel safe when they see fancy AV GUIs and lots of animated progress bars that have nothing to do with Malware detection....&lt;/p&gt;
+&lt;p&gt;Attackers and VXers are using new attack vectors that the AV industry have to keep up with, the creators of these Malware are always ahead of the game. AV vendors have set up their own labs to collect and analyze all sorts of different emerging Malware variants, and from other speculations (I've no proof if it's true or false) it has been said some of these AV vendors create Malware they can only neutralize, for commercial gains &lt;sup&gt;1&lt;/sup&gt; .&lt;/p&gt;
+&lt;p&gt;Investing only on an AV product for protection and detection of potential attacks either in an enterprise network or personal computer is a bad idea. There are other considerations that you have to factor in your defensive model.&lt;/p&gt;
+&lt;h3&gt;Kill AVs or Not?&lt;/h3&gt;
+&lt;p&gt;We can't rule out the fact that AVs still play a role in protecting our systems, but the way we utilize and make use of these products is what matters. An important focus is on the attack vector, for instance a Malware can download a Base64 encoded payload and execute it, another can use DNS query to get the same encoded payload, another can kill the AV process etc&lt;/p&gt;
+&lt;p&gt;Active Network monitoring and packet analysis are some of the very best ways to combine with AV features. Deploying an Intrusion Detection System (NIDS, HIDS), strict Firewall rules and ensuring all services that are not needed on the System are shutdown and also making sure the System gets all critical/non-critical updates etc. The other key thing is user-awareness, especially in an enterprise setting, train users not to click any link they see on their emails and websites. &lt;/p&gt;
+&lt;h3&gt;Can We now get a Linux AV?&lt;/h3&gt;
+&lt;p&gt;There is a common misconception that Linux is Malware-free, well, VXers are mainly motivated by money! The reason why Windows has a higher percentage of Malware hits it's not just about the Microsoft Windows OS but the market share it has, especially on personal computers. &lt;/p&gt;
+&lt;p&gt;Linux on the other hand has a larger market share on Server Systems and it's also getting a grip on the personal computers as well. There is a rise of Linux Malware over the past decade and it's highly advisable to get a Linux AV if you are using Linux in an heterogeneous network.&lt;/p&gt;
+&lt;p&gt;The Linux Servers (or PCs) can be used to serve Malware to the Windows/Mac clients if not well scanned and monitored, these is especially in an enterprise network. other compromised Linux machines can be used for DDOS, hosting Malware, spam mail-server etc... Read about the recent
+&lt;a href="http://blog.malwaremustdie.org/2014/09/mmd-0028-2014-fuzzy-reversing-new-china.html"&gt;Linux XOR Malware&lt;/a&gt;...&lt;/p&gt;
+&lt;h3&gt;So what's the best AV?&lt;/h3&gt;
+&lt;p&gt;To call an AV "the best", there are a lot of factors to consider and you have to compare with the other existing AV products. From my personal point of view, a good AV should be good in:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Identifying malicious behavior in programs&lt;/li&gt;
+&lt;li&gt;Identifying malicious behavior in documents and web-pages&lt;/li&gt;
+&lt;li&gt;Identifying malicious patterns in network packets&lt;/li&gt;
+&lt;li&gt;Adapting and identifying new malicious patters based on previous found patterns&lt;/li&gt;
+&lt;li&gt;Self protection (so Malware can't kill it)&lt;/li&gt;
+&lt;li&gt;Scanning compressed and packed files&lt;/li&gt;
+&lt;li&gt;Providing some Firewall features (block malicious traffic even if the IDS/FW allowed).&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Having an AV that can do all the above without bias is pretty hard and will definitely be expensive, tailored for the enterprise networks.
+&lt;a href="http://www.av-test.org"&gt;AV-Test&lt;/a&gt; is an independent IT-Security Institute, recently they did a research on trying to analyze the common AV vendors products and their detection rate on some 900 actually "already known" attackers for Linux and 12,000 attackers for Windows.&lt;/p&gt;
+&lt;p&gt;Only &lt;code&gt;Kaspersky Endpoint Version&lt;/code&gt; achieved 100-percent detection under Linux and only the security package from &lt;code&gt;Symantec&lt;/code&gt; achieved 100% detection under Windows (compared to their counterparts). &lt;/p&gt;
+&lt;p&gt;Please note that these results from the tests doesn't satisfy that the AVs having 100% detection rates are the best security products for your network, as a matter of fact security is a service not a product. Today they might be able to detect 100% attackers, tomorrow maybe 50%. And another thing, if you read such reports to help you make decision on what AV to deploy on your network hosts, be reminded this is a limited test (all AV vendors use) to come up with the detection rates on the identified threats. What if the unidentified attackers are more than the identified? &lt;/p&gt;
+&lt;p&gt;&lt;img alt="AV-Test Results, 2015" src="/images/av-test.png" title="AV test on detection rate on Windows and Linux" /&gt;&lt;/p&gt;
+&lt;h2&gt;Conclusion&lt;/h2&gt;
+&lt;p&gt;AV vendors have to find a way to stay relevant and useful in combating Malware otherwise they will soon be phased out by more advance prevention and detection systems. As the commonly used checksum &amp;amp; hash functions for building up some signatures are being cryptographically flawed (e.g. MD5&lt;sup&gt;2&lt;/sup&gt; and SHA1&lt;sup&gt;3&lt;/sup&gt; collisions) the process of coming up with the AV Signatures is wanting.&lt;/p&gt;
+&lt;p&gt;Before investing on an AV for your hosts in a network, do a deep threat modeling to identify your potential treats and build up a defensive mechanism for your network mainly based on your threat model for best results on a reasonable budget.&lt;/p&gt;
+&lt;p&gt;As much as network log analysis and captured network traffic analysis are important especially in an incident response, invest in setting up a real-time network traffic analysis and defense, even if you have an AV deployed. Be proactive and focus on preventing-detecting-neutralizing threats. &lt;/p&gt;
+&lt;h4&gt;Reference:&lt;/h4&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;sup&gt;1&lt;/sup&gt; - &lt;a href="http://thenextweb.com/insider/2015/08/14/kaspersky-antivirus-accused-of-creating-malware-for-over-10-years/"&gt;Kaspersky AV Accused of Creating Malware for over 10 years&lt;/a&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;sup&gt;2&lt;/sup&gt; -&lt;a href="http://www.mathstat.dal.ca/~selinger/md5collision/"&gt;MD5 Collision Demo&lt;/a&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;sup&gt;3&lt;/sup&gt; -&lt;a href="https://sites.google.com/site/itstheshappening/"&gt;The SHAppening: freestart collisions for SHA-1&lt;/a&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;a href="https://securelist.com/analysis/36063/the-contemporary-antivirus-industry-and-its-problems/"&gt;The contemporary AV industry and its problems&lt;/a&gt;&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;</summary><category term="AV"></category><category term="Antivirus"></category><category term="infosec"></category><category term="opinion"></category></entry><entry><title>Group Dynamics - extreme group conformity...</title><link href="http://prewired.pw/2015/07/group-dynamics.html" rel="alternate"></link><updated>2015-07-27T09:28:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2015-07-27:2015/07/group-dynamics.html</id><summary type="html">&lt;p&gt;&lt;img alt="Group Dynamics" src="/images/dynamic.png" /&gt;&lt;/p&gt;
+&lt;p&gt;There is this new belief system of group productivity everywhere, from corporate to schools. At work places, we have open offices, team building and all sorts of group work but what we are forgetting is that solitude is an important ingredient to productivity.. When we just rely on group-work and teams, sometimes we do forget what we are capable of doing independently.&lt;/p&gt;
+&lt;p&gt;People are different, we have introverts, extroverts and those who enjoy these two different worlds, ambiverts.  Introverts like spending some “alone” time, their inner world is much more stimulating and rewarding to them as opposed to extroverts. The point here is, groups are composed of different people, who yield results differently, embrace that.. The IT industry lucky enough, understand this concept better than any other industry, look at Google Inc. for instance, employees have a sense of freedom yet they also collaborate to produce world leading products and services...&lt;/p&gt;
+&lt;p&gt;Most, if not all of the fabulous Eureka moments were found on a solitude time away from the influence of group dynamics. Newton sitting under a tree, a fruit fell on his head,  gravity. Albert Einstein - father of modern physics, Graham Bell - invented the first practical telephone, and the list goes down..&lt;/p&gt;
+&lt;p&gt;From contemporary psychology, it turns out we can't be in a group of people without instinctively mimicking their opinions. You will start aping the beliefs of the people around you without even realizing that's what you are doing! Group seamlessly follow the opinion of the most dominating or charismatic person in the room even though there is zero correlation between being the best talker and having the best ideas. You might follow this person with the best ideas but you might not…. And you really want to leave it up to chance.&lt;/p&gt;
+&lt;p&gt;It's much better for everyone to go off by themselves, do research and generate their own ideas freed from the distortion of group dynamics and then come together in as a team/group to talk them through in a well managed environment and take it from there.&lt;/p&gt;
+&lt;p&gt;The more freedom that we give to team/group workers the more likely that they are to come up with unique solutions to the problems.. Sometimes we need to get into our own head, so stop the madness of constant group work and encourage people to think! There should be a balance between group work and personal work to increase creativity and importantly, personal growth.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;P.S.&lt;/strong&gt; Read “Quiet: The Power of Introverts in a World That Can't Stop Talking” – By Susan Cain&lt;/p&gt;</summary><category term="Random"></category></entry><entry><title>Rocking it! GNOME3 Shell Extensions..</title><link href="http://prewired.pw/2015/04/gnome-extension.html" rel="alternate"></link><updated>2015-04-27T14:15:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2015-04-27:2015/04/gnome-extension.html</id><summary type="html">&lt;p&gt;I don't really give a tinker's damn about your desktop, if you have a picture of a unicorn as your wallpaper or a really old picture of Hitler smiling, that's up to you. Though, sometimes I do care about having my files/folders arranged, in a way I can remember everything on a "where-is-X" basis, and adjusting system's default settings.&lt;/p&gt;
+&lt;p&gt;What GNOME offers, even after a fresh install without tweaks, is satisfying. There are decent unbiased articles&lt;sup&gt;1&lt;/sup&gt; written specifically about GNOME features and comparison made against KDE. Both Desktop-environments have their strengths and  weaknesses, choosing what fits you is kind of religious and experimental.&lt;/p&gt;
+&lt;p&gt;The list of projects&lt;sup&gt;2&lt;/sup&gt; covered under GNOME is long. Here, I simply searched for some &lt;a href="https://extensions.gnome.org/"&gt;extensions&lt;/a&gt; that are potentially helpful, below is a list of what I picked:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://extensions.gnome.org/extension/97/coverflow-alt-tab/"&gt;Coverflow alt-tab&lt;/a&gt; - Nice preview of the running applications when you use Alt+Tab.&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://extensions.gnome.org/extension/760/minimize-all/"&gt;Minimize all&lt;/a&gt; - A lot of windows and sometimes you just want to see your desktop?&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://extensions.gnome.org/extension/815/simple-dock/"&gt;Simple dock&lt;/a&gt; - Easy access to most used application?&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://extensions.gnome.org/extension/162/todo-list/"&gt;Todo list&lt;/a&gt; - Easily distracted and want to keep track of activities to finish?&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://extensions.gnome.org/extension/442/drop-down-terminal/"&gt;Drop Down Terminal&lt;/a&gt; - Just a bonus extension for getting a pseudo-terminal on the fly!&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;No other extra configs required if you are using the "GNOME Tweak Tool" for the installs, apart from the &lt;a href="https://extensions.gnome.org/extension/442/drop-down-terminal/"&gt;Drop Down Terminal&lt;/a&gt; extension, which requires the &lt;em&gt;Vte library (version &amp;gt;= 0.31)&lt;/em&gt; and the &lt;em&gt;gir typelib&lt;/em&gt;.. &lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;install
+ On Fedora/Arch: &lt;span class="s1"&gt;&amp;#39;vte3&amp;#39;&lt;/span&gt; package
+ On Debian/Ubuntu:  &lt;span class="s1"&gt;&amp;#39;gir-1.2-vte-2.*&amp;#39;&lt;/span&gt; package &lt;span class="o"&gt;(&lt;/span&gt;not installed by default&lt;span class="o"&gt;)&lt;/span&gt;
+ On OpenSUSE: &lt;span class="s1"&gt;&amp;#39;typelib-1_0-Vte-2.*&amp;#39;&lt;/span&gt; package &lt;span class="o"&gt;(&lt;/span&gt;not installed by default&lt;span class="o"&gt;)&lt;/span&gt;
+
+Then, log out/restart.
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;If you ever build&lt;sup&gt;3&lt;/sup&gt; your own extension, or find any other extension worth a try, share.. To share is divine!&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;References:&lt;/p&gt;
+&lt;p&gt;&lt;sup&gt;1&lt;/sup&gt; &lt;a href="http://www.diffen.com/difference/GNOME_vs_KDE"&gt;http://www.diffen.com/difference/GNOME_vs_KDE&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;&lt;sup&gt;2&lt;/sup&gt; &lt;a href="https://wiki.gnome.org/Projects"&gt;https://wiki.gnome.org/Projects&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;&lt;sup&gt;3&lt;/sup&gt; &lt;a href="https://wiki.gnome.org/Projects/GnomeShell/Extensions/StepByStepTutorial"&gt;https://wiki.gnome.org/Projects/GnomeShell/Extensions/StepByStepTutorial&lt;/a&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;&lt;img alt="Screenshot" src="/images/shot.png" title="Alt+Tab Gnome3 Shell Extension" /&gt;&lt;/p&gt;</summary><category term="Linux"></category></entry><entry><title>Queue &amp; Load Average in Linux</title><link href="http://prewired.pw/2015/03/Queue-and-CPULoads.html" rel="alternate"></link><updated>2015-03-19T14:15:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2015-03-19:2015/03/Queue-and-CPULoads.html</id><summary type="html">&lt;p&gt;Queue is the current runtime queue for processes. Load averages are measurements of this metric over 5-, 10-, and 15- minute
+intervals. So, the runtime queue is a count of the number of processes ready to run at any given point in time.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;uptime
+ 14:17pm  up   0:57,  &lt;span class="m"&gt;6&lt;/span&gt; users,  load average: 0.37, 0.54, 0.44
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;That means, a value less than 1 is not bad and there is never a process idling in the queue waiting to be run. Therefore, when
+the load averages start to rise over 1, know there is always a process ready and waiting to be scheduled!&lt;/p&gt;
+&lt;p&gt;Obviously, when the load averages rise above 1 there is something in the system being delayed. If it's a mission critical system, running some serious stuff in a production environment, getting an additional CPU can solve the problem and ensure that there is a better chance of “schedulable” time.&lt;/p&gt;
+&lt;hr /&gt;
+&lt;p&gt;These data can be monitored through:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;uptime
+&lt;span class="nv"&gt;$ &lt;/span&gt;top
+&lt;span class="nv"&gt;$ &lt;/span&gt;vmstat
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;uptime somehow has a nice output of the load average data.&lt;/p&gt;
+&lt;hr /&gt;
+&lt;p&gt;Read:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href="http://blog.scoutapp.com/articles/2009/07/31/understanding-load-averages"&gt;Understanding Linux CPU Load&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://prutser.wordpress.com/2012/04/23/understanding-linux-load-average-part-1"&gt;Understanding Linux Load Average – Part 1&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;</summary><category term="Linux"></category></entry><entry><title>Securing backups to Dropbox with LUKS</title><link href="http://prewired.pw/2015/02/dropbox-with-LUKS.html" rel="alternate"></link><updated>2015-02-25T12:28:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2015-02-25:2015/02/dropbox-with-LUKS.html</id><summary type="html">&lt;h3&gt;Dropbox meets LUKS&lt;/h3&gt;
+&lt;p&gt;When it comes to my data, I like it private even though I've nothing to hide (ignore the paradox). I've been using &lt;a href="https://www.dropbox.com/"&gt;Dropbox&lt;/a&gt; and &lt;a href="http://docs.openstack.org/developer/swift/"&gt;Swift (OpenStack Object Storage project)&lt;/a&gt; to backup my data.&lt;/p&gt;
+&lt;p&gt;I tried writing a BASH script to recursively encrypt all the content of a folder with my public &lt;a href="http://prewired.pw/2015/02/New-GPG.html"&gt;GPG key&lt;/a&gt; and sync the encrypted content of the folder with my remote backup (but with time it wasn't cool, not at all!). I had to plug-in my USB disk that has my private GPG keys each time I had to open any of the encrypted files, what a PITA!&lt;/p&gt;
+&lt;p&gt;Now, I've been using Dropbox to synchronize a single binary file that is LUKS-encrypted Linux file system. It might not seem cool but it's easier for me :) &lt;/p&gt;
+&lt;p&gt;This process (of Dropbox+LUKS) is sort of a cliché right now but I'm just posting to share my simplified way of doing it...&lt;/p&gt;
+&lt;h3&gt;Step one:&lt;/h3&gt;
+&lt;p&gt;Install Dropbox, head over to &lt;a href="https://www.dropbox.com/install?os=lnx"&gt;Dropbox's site&lt;/a&gt; and get Dropbox. I'm currently using Ubuntu 14 (Yes, Ubuntu!).. or do a Dropbox headless Install via command line&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;32-bit:
+
+&lt;span class="nv"&gt;$ &lt;/span&gt;&lt;span class="nb"&gt;cd&lt;/span&gt; ~ &lt;span class="o"&gt;&amp;amp;&amp;amp;&lt;/span&gt; wget -O - &lt;span class="s2"&gt;&amp;quot;https://www.dropbox.com/download?plat=lnx.x86&amp;quot;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; tar xzf -
+
+64-bit:
+
+&lt;span class="nv"&gt;$ &lt;/span&gt;&lt;span class="nb"&gt;cd&lt;/span&gt; ~ &lt;span class="o"&gt;&amp;amp;&amp;amp;&lt;/span&gt; wget -O - &lt;span class="s2"&gt;&amp;quot;https://www.dropbox.com/download?plat=lnx.x86_64&amp;quot;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; tar xzf -
+
+Next, run the Dropbox daemon from the newly created .dropbox-dist folder.
+
+&lt;span class="nv"&gt;$ &lt;/span&gt;~/.dropbox-dist/dropboxd
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;h3&gt;Step Two:&lt;/h3&gt;
+&lt;p&gt;Make sure you have a working Dropbox Account, if not, &lt;a href="https://www.dropbox.com/register"&gt;register for a Dropbox account&lt;/a&gt;. Then sign-in to Dropbox via your installed Dropbox client (make sure the dropbox daemon is running).&lt;/p&gt;
+&lt;p&gt;You should have a folder named Dropbox in your home folder after you've logged-in to your account. &lt;/p&gt;
+&lt;h3&gt;Step Three:&lt;/h3&gt;
+&lt;p&gt;Download &lt;a href="https://github.com/JohnTroony/LUKS-OPs/releases"&gt;Luks-Ops&lt;/a&gt;, a script that I've written to automate the basic LUKS operation on Linux.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="c"&gt;# 1. Clone the repo&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;git clone https://github.com/JohnTroony/LUKS-OPs.git
+&lt;span class="nv"&gt;$ &lt;/span&gt;&lt;span class="nb"&gt;cd &lt;/span&gt;LUKS-OPs
+
+&lt;span class="c"&gt;# 2. Change to super user&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;sudo su 
+
+&lt;span class="c"&gt;# 3. Copy the script to /bin  as luksOps&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;cp luks-ops.sh /bin/luksOps 
+
+&lt;span class="c"&gt;# 4. Move into the Dropbox folder to create the LUKS container&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;&lt;span class="nb"&gt;cd&lt;/span&gt; /home/user/Dropbox 
+
+&lt;span class="c"&gt;# 5. Create a LUKS container but don&amp;#39;t mount it, DISKNAME is the label, 1000 is size in MB&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;luksOps new DISKNAME 1000
+
+&lt;span class="c"&gt;# 6. Move the created LUKS container (DISKNAME) to /home/user/Dropbox&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;mv /usr/DISKNAME .
+
+&lt;span class="c"&gt;# 7. Mount the LUKS container. This will ask for the pass phrase.&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;luksOps mount DISKNAME
+
+&lt;span class="c"&gt;# 8. Add files to the Mounted LUKS container then use the following command to exit&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;luksOps unmount-all
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;That is all, once you have the LUKS container in the &lt;code&gt;$ ~/Dropbox&lt;/code&gt; folder, you can always mount it, add files (You wouldn't want to be adding and removing large multimedia files to the container though.), unmount it and let Dropbox sync the changes!&lt;/p&gt;
+&lt;p&gt;N.B: check luksOps menu for more options like to unmount a single volume instead of all.&lt;/p&gt;
+&lt;p&gt;Done!&lt;/p&gt;
+&lt;h3&gt;I've to checkout:&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;a href="http://sovworks.com/eds/"&gt;EDS&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="http://en.wikipedia.org/wiki/EncFS"&gt;EncFS&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="http://duplicity.nongnu.org/"&gt;duplicity&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://tahoe-lafs.org/trac/tahoe-lafs/wiki"&gt;Tahoe-LAFS&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://apps.ubuntu.com/cat/applications/precise/cryptkeeper/"&gt;CryptKeeper&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3&gt;Let's encrypt!&lt;/h3&gt;</summary><category term="LUKS"></category><category term="security"></category></entry><entry><title>My GnuPG Transition</title><link href="http://prewired.pw/2015/02/New-GPG.html" rel="alternate"></link><updated>2015-02-12T16:28:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2015-02-12:2015/02/New-GPG.html</id><summary type="html">&lt;h3&gt;The old key, which I am transitional away from, is:&lt;/h3&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;pub  4096R/D5E28EE0 (0x192BA1E6D5E28EE0) 2014-02-22 
+John Ombagi (Linux, DB &amp;amp; Infosec) &amp;lt;ombagi@promaxted.com&amp;gt;
+John Ombagi (Linux, DB &amp;amp; Infosec) &amp;lt;jayombagi@gmail.com&amp;gt;
+Fingerprint=ACF5 FAFE 3C3D 4CE5 95D9  C31B 192B A1E6 D5E2 8EE0
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;h3&gt;The new key, to which I am transitioning, is:&lt;/h3&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;pub  4096R/AD3A484C (0x7b85a886ad3a484c) 2014-11-10 
+John Ombagi &amp;lt;ombagi@outlook.com&amp;gt;
+John Ombagi (Troon) &amp;lt;jayombagi@gmail.com&amp;gt;
+Fingerprint=CC89 97A6 1F78 304A 7D91  C27F 7B85 A886 AD3A 484C
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;h3&gt;&lt;a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/gpg-transition.txt"&gt;gpg-transition.txt&lt;/a&gt;&lt;/h3&gt;
+&lt;p&gt;Contains detailed info about my GPG transition/revocation.&lt;/p&gt;
+&lt;h3&gt;&lt;a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/sig1.txt"&gt;sig1.txt&lt;/a&gt;&lt;/h3&gt;
+&lt;p&gt;Signature of the gpg-transition.txt using the old key 0x192BA1E6D5E28EE0&lt;/p&gt;
+&lt;h3&gt;&lt;a href="https://raw.githubusercontent.com/JohnTroony/My-GPG-key-transition/master/sig2.txt"&gt;sig2.txt&lt;/a&gt;&lt;/h3&gt;
+&lt;p&gt;Signature of the gpg-transition.txt using the new key 0x7b85a886ad3a484c&lt;/p&gt;
+&lt;h2&gt;Updating&lt;/h2&gt;
+&lt;p&gt;To fetch the full new key from a public key server using GnuPG, run:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;    &lt;span class="nv"&gt;$ &lt;/span&gt;gpg --keyserver keys.gnupg.net --recv-key 0x7B85A886AD3A484C
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;If you have already validated my old key, you can then validate that the
+new key is signed by my old key:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;    &lt;span class="nv"&gt;$ &lt;/span&gt;gpg --check-sigs 0x7B85A886AD3A484C
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;Just incase you need to clarify anything about my GnuPG keys, reach me via &lt;strong&gt;jayombagi at gmail dot com&lt;/strong&gt;&lt;/p&gt;</summary><category term="GPG"></category><category term="security"></category></entry><entry><title>Are we taking advantage of the computing power we have?</title><link href="http://prewired.pw/2014/11/computing-power.html" rel="alternate"></link><updated>2014-11-16T09:28:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2014-11-16:2014/11/computing-power.html</id><summary type="html">&lt;p&gt;Computing power is ever increasing not just with high clock cycles but with multiple logical processors referred as cores. Clock cycles determine the number of instructions a processor can process within a given interval of time. The more the number of clocks, the more the instructions potentially executed in terms of KHz (thousands of operations per second), MHz (millions of operations per second), and the current GHz (billions of operations per second).&lt;/p&gt;
+&lt;p&gt;A Core has it's own ALU and caches L2 and L3, among other elements to carry out instructions. Basically, cores (logical processors) enable parallel execution of different parts of a program, or even different programs, simultaneously. These new generation architectures, makes the OS assume there are more than one processor in the system even though there is a single physical chip on board.&lt;/p&gt;
+&lt;p&gt;Generally speaking, a machine with a low clock cycle speed but with multiple cores can be faster compared to a machine with a single processor and high clock cycle speeds. However, I've had both bad times and good times while trying to crunch some “big-data”, encrypting huge file-system etc. It's so frustrating when you get low speeds while using these modern high-end machines for your day-to-day computing.&lt;/p&gt;
+&lt;p&gt;Having a high-end machine (Laptop/Desktop/Server) doesn't necessary mean you'll automatically have the best computing experience.. The problem is not always with your hardware but the architecture of the software using these new generation processors.&lt;/p&gt;
+&lt;p&gt;So, what's the importance of having a laptop with 4 cores if only 1 core is operating while the rest of the cores sleep? I mean, it's like employing 4 employees and while 1 is working, the rest just eat and fart in your office.&lt;/p&gt;
+&lt;p&gt;People who use their computers for basic computing like editing files, working with ledgers, watching a movie etc won't really notice any serious performance issues compared to a programmer compiling application from source code or a SysAdmin who is trying to compress and backup gigabytes of data.&lt;/p&gt;
+&lt;h2&gt;Simple Test&lt;/h2&gt;
+&lt;p&gt;As a simple test, I'm using my Laptop ( i7-2640M, sandy-bridge, 4 Cores each with 2.80 GHz) running Debian to compress two files with bzip2 then compare the results with pbzip2. Well, there is a performance note about bzip2 (block-sorting file compressor) on it's man page and pbzip2 is a parallel implementation of the bzip2 that uses pthreads and achieves near-linear speedup on SMP machines.&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Compression Test" src="/images/1.png" /&gt;&lt;/p&gt;
+&lt;p&gt;Using pbzip2 was faster compared to bzip2 and the following screen shots shows the CPU history for both respectively.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;pbzip2 CPU history:&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img alt="pbzip2 CPU history" src="/images/2.png" /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;bzip2 CPU history:&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img alt="bzip2 CPU history" src="/images/3.png" /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;pbzip&lt;/code&gt; makes use of the four CPUs to compress the files and the result is far impressive compared to using &lt;code&gt;bzip2&lt;/code&gt;. I've avoided the nitty gritty details of bzip2/pbzip since this is not a post about the tools. However, you can explore pbzip and set other options like Load average and Block size. I tried reading the files to be compressed into memory then split the compression work among the CPUs with pbzip and the performance was still good.&lt;/p&gt;
+&lt;p&gt;&lt;img alt="pbzip Performance" src="/images/4.png" /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img alt="pbzip Performance" src="/images/5.png" /&gt;&lt;/p&gt;
+&lt;h2&gt;Conclusion:&lt;/h2&gt;
+&lt;p&gt;Are we really making use of the computing power we have?
+We can only make good use of these powerful computation resources if we design our applications and programs to take advantage of the power in the underlying hardware they run on, be it in a distributed environment, cloud computing or in a simple multi-core computer.&lt;/p&gt;
+&lt;p&gt;Mission critical systems need a system analysts who can identify common bottlenecks and other performance issues that can be resolved or even design new parallel algorithms in the application stack.&lt;/p&gt;</summary><category term="repost"></category></entry><entry><title>Testing for ShellShock in Linux (CentOS/OEL)</title><link href="http://prewired.pw/2014/10/testing-shellshock.html" rel="alternate"></link><updated>2014-10-03T16:00:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2014-10-03:2014/10/testing-shellshock.html</id><summary type="html">&lt;p&gt;Below is a simple bash script I've been using to test for shellshock vulns in my Linux setups. Though, it's not a script to really decide weather you are totally safe of not, due to the nature of shellshock and other different attack vectors that leverage it.&lt;/p&gt;
+&lt;p&gt;Keep following updates from CVE and other Linux news portals. I've been using the script on CentOS 6.5 and Oracle Linux 6.5.. I do understand all bash versions through 4.3 are affected but I discovered even after patching my systems with the first fix updates, my Bash binary was somehow still affected until I did another update/upgrade.&lt;/p&gt;
+&lt;hr /&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="c"&gt;#!/bin/sh&lt;/span&gt;
+
+&lt;span class="c"&gt;# Adapted from Common Vuls DB&lt;/span&gt;
+&lt;span class="c"&gt;# Additional tweaks by John Troony.&lt;/span&gt;
+
+&lt;span class="c"&gt;#Some Color codes&lt;/span&gt;
+&lt;span class="nv"&gt;red&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;\033[31m&amp;quot;&lt;/span&gt;
+&lt;span class="nv"&gt;green&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;\033[32m&amp;quot;&lt;/span&gt;
+&lt;span class="nv"&gt;blue&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;\033[34m&amp;quot;&lt;/span&gt;
+&lt;span class="nv"&gt;normal&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;\033[0m&amp;quot;&lt;/span&gt;
+
+clear
+
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="nv"&gt;$blue&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;Hostname:      &lt;/span&gt;&lt;span class="nv"&gt;$HOSTNAME&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt;
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="nv"&gt;$blue&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;Bash Version:  &lt;/span&gt;&lt;span class="nv"&gt;$BASH_VERSION&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt;
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="nv"&gt;$blue&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;Machine Type:  &lt;/span&gt;&lt;span class="nv"&gt;$MACHTYPE&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$noraml&lt;/span&gt;
+&lt;span class="nb"&gt;echo&lt;/span&gt;
+
+&lt;span class="nv"&gt;PATH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+
+&lt;span class="c"&gt;# We use the default system&amp;#39;s bash unless there is already&lt;/span&gt;
+&lt;span class="c"&gt;# a $TESTBASH environment variable present&lt;/span&gt;
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="o"&gt;[&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$TESTBASH&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;]&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="o"&gt;[&lt;/span&gt; ! -x &lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$TESTBASH&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;]&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;then&lt;/span&gt;
+    &lt;span class="nv"&gt;TESTBASH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;/bin/bash
+    &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="o"&gt;[&lt;/span&gt; ! -x &lt;span class="nv"&gt;$TESTBASH&lt;/span&gt; &lt;span class="o"&gt;]&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;then&lt;/span&gt;
+        &lt;span class="nv"&gt;TESTBASH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;/usr/bin/bash
+        &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="o"&gt;[&lt;/span&gt; ! -x &lt;span class="nv"&gt;$TESTBASH&lt;/span&gt; &lt;span class="o"&gt;]&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;then&lt;/span&gt;
+            &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$red&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;ERROR: No bash binary to test!&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+            &lt;span class="nb"&gt;exit &lt;/span&gt;1
+        &lt;span class="k"&gt;fi&lt;/span&gt;
+    &lt;span class="k"&gt;fi&lt;/span&gt;
+&lt;span class="k"&gt;fi&lt;/span&gt;
+
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$green&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;Checking vulnerabilities in &lt;/span&gt;&lt;span class="nv"&gt;$TESTBASH&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+
+&lt;span class="nv"&gt;RUNPATCH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;0
+
+&lt;span class="c"&gt;## CVE-2014-6271&lt;/span&gt;
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;quot;\nChecking for CVE-2014-6271...&amp;quot;&lt;/span&gt;
+&lt;span class="nv"&gt;VULNERABLE&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;0
+&lt;span class="o"&gt;(&lt;/span&gt;
+   env &lt;span class="s1"&gt;&amp;#39;x=() { :;}; echo vulnerable&amp;#39;&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;BASH_FUNC_x()=() { :;}; echo vulnerable&amp;#39;&lt;/span&gt; &lt;span class="nv"&gt;$TESTBASH&lt;/span&gt; -c &lt;span class="s2"&gt;&amp;quot;echo test&amp;quot;&lt;/span&gt;
+&lt;span class="o"&gt;)&lt;/span&gt; 2&amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;&lt;span class="m"&gt;1&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; grep &lt;span class="s2"&gt;&amp;quot;vulnerable&amp;quot;&lt;/span&gt; &amp;gt;/dev/null 2&amp;gt;/dev/null &lt;span class="o"&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class="nv"&gt;VULNERABLE&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+
+&lt;span class="c"&gt;## CVE-2014-6271 (complete patch)&lt;/span&gt;
+&lt;span class="o"&gt;(&lt;/span&gt;
+   env &lt;span class="s1"&gt;&amp;#39;x=() { :;}; echo vulnerable&amp;#39;&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;BASH_FUNC_x()=() { :;}; echo vulnerable&amp;#39;&lt;/span&gt; &lt;span class="nv"&gt;$TESTBASH&lt;/span&gt; -c &lt;span class="s2"&gt;&amp;quot;echo test&amp;quot;&lt;/span&gt;
+&lt;span class="o"&gt;)&lt;/span&gt; 2&amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;&lt;span class="m"&gt;1&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; grep &lt;span class="s2"&gt;&amp;quot;bash: error importing function definition for &amp;#39;x&amp;#39;&amp;quot;&lt;/span&gt; &amp;gt;/dev/null 2&amp;gt;/dev/null &lt;span class="o"&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class="nv"&gt;VULNERABLE&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="o"&gt;[&lt;/span&gt; &lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;VULNERABLE&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt; -eq &lt;span class="m"&gt;1&lt;/span&gt; &lt;span class="o"&gt;]&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;then&lt;/span&gt;
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$red&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;vulnerable to CVE-2014-6271&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    &lt;span class="nv"&gt;V6271&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+    &lt;span class="nv"&gt;RUNPATCH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+&lt;span class="k"&gt;else&lt;/span&gt;
+    &lt;span class="nv"&gt;V6271&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;0
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$blue&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;not vulnerable to CVE-2014-6271&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    :
+&lt;span class="k"&gt;fi&lt;/span&gt;
+
+&lt;span class="c"&gt;## CVE-2014-7169&lt;/span&gt;
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;quot;\nChecking for CVE-2014-7169...&amp;quot;&lt;/span&gt;
+&lt;span class="nb"&gt;cd&lt;/span&gt; /tmp
+rm -f &lt;span class="nb"&gt;echo&lt;/span&gt;
+env -i  &lt;span class="nv"&gt;X&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s1"&gt;&amp;#39;() { (a)=&amp;gt;\&amp;#39;&lt;/span&gt; &lt;span class="nv"&gt;$TESTBASH&lt;/span&gt; -c &lt;span class="s1"&gt;&amp;#39;echo date&amp;#39;&lt;/span&gt; &amp;gt;/dev/null 2&amp;gt;/dev/null &lt;span class="c"&gt;#&amp;#39;&lt;/span&gt;
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="o"&gt;[&lt;/span&gt; -f &lt;span class="nb"&gt;echo&lt;/span&gt; &lt;span class="o"&gt;]&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;then&lt;/span&gt;
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$red&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;vulnerable to CVE-2014-7169&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    &lt;span class="nv"&gt;V7169&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+    &lt;span class="nv"&gt;RUNPATCH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+    rm -f &lt;span class="nb"&gt;echo&lt;/span&gt;
+&lt;span class="k"&gt;else&lt;/span&gt;
+    &lt;span class="nv"&gt;V7169&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;0
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$blue&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;not vulnerable to CVE-2014-7169&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+&lt;span class="k"&gt;fi&lt;/span&gt;
+
+&lt;span class="c"&gt;## CVE-2014-7186&lt;/span&gt;
+&lt;span class="c"&gt;## I&amp;#39;ve tested in my unpatched CentOS 6.5 Server and it causes a segment fault if CPU is in uprotected mode.&lt;/span&gt;
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;quot;\nChecking for CVE-2014-7186...&amp;quot;&lt;/span&gt;
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nv"&gt;$TESTBASH&lt;/span&gt; -c &lt;span class="s1"&gt;&amp;#39;ulimit -c 0; true &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF &amp;lt;&amp;lt;EOF&amp;#39;&lt;/span&gt; 2&amp;gt;/dev/null
+&lt;span class="k"&gt;then&lt;/span&gt;
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$blue&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;not vulnerable to CVE-2014-7186&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    &lt;span class="nv"&gt;V7186&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;0
+&lt;span class="k"&gt;else&lt;/span&gt;
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$red&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;vulnerable to CVE-2014-7186&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    &lt;span class="nv"&gt;V7186&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+    &lt;span class="nv"&gt;RUNPATCH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+&lt;span class="k"&gt;fi&lt;/span&gt;
+
+&lt;span class="c"&gt;## CVE-2014-7187&lt;/span&gt;
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="s2"&gt;&amp;quot;\nChecking for  CVE-2014-7187...&amp;quot;&lt;/span&gt;
+perl -e &lt;span class="s1"&gt;&amp;#39;for my $x (1..200) { print &amp;quot;for x$x in ; do :\n&amp;quot;; } for my $x (1..200) { print &amp;quot;done\n&amp;quot; }&amp;#39;&lt;/span&gt; &amp;gt; /tmp/test_script.&lt;span class="nv"&gt;$$&lt;/span&gt;.sh
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="nv"&gt;$TESTBASH&lt;/span&gt; /tmp/test_script.&lt;span class="nv"&gt;$$&lt;/span&gt;.sh 2&amp;gt;/dev/null &amp;gt;/dev/null&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;then&lt;/span&gt;
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$blue&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;not vulnerable to CVE-2014-7187&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    &lt;span class="nv"&gt;V7187&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;0
+&lt;span class="k"&gt;else&lt;/span&gt;
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$red&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;vulnerable to CVE-2014-7187&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    &lt;span class="nv"&gt;V7187&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+    &lt;span class="nv"&gt;RUNPATCH&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+&lt;span class="k"&gt;fi&lt;/span&gt;
+
+&lt;span class="nv"&gt;EXITCODE&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;1
+&lt;span class="nb"&gt;echo&lt;/span&gt;
+&lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="o"&gt;[&lt;/span&gt; &lt;span class="si"&gt;${&lt;/span&gt;&lt;span class="nv"&gt;RUNPATCH&lt;/span&gt;&lt;span class="si"&gt;}&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="m"&gt;1&lt;/span&gt; &lt;span class="o"&gt;]&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;then&lt;/span&gt;
+    &lt;span class="c"&gt;# Check OS version&lt;/span&gt;
+
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$red&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$TESTBASH&lt;/span&gt;&lt;span class="s2"&gt; has some vulns that requires patching.&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    &lt;span class="k"&gt;case&lt;/span&gt; &lt;span class="sb"&gt;`&lt;/span&gt;gvquery -p os_dist 2&amp;gt; /dev/null&lt;span class="sb"&gt;`&lt;/span&gt; in
+        solaris*&lt;span class="o"&gt;)&lt;/span&gt;
+            &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="o"&gt;[&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$V6271&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$V7169&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$V7186&lt;/span&gt;&lt;span class="s2"&gt; &lt;/span&gt;&lt;span class="nv"&gt;$V7187&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="s2"&gt;&amp;quot;0 0 0 1&amp;quot;&lt;/span&gt; &lt;span class="o"&gt;]&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt; &lt;span class="k"&gt;then&lt;/span&gt;
+                &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$green&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;Oracle does not have a patch for CVE-2014-7187 yet for this OS&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+                &lt;span class="nv"&gt;EXITCODE&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;0
+            &lt;span class="k"&gt;fi&lt;/span&gt;
+            &lt;span class="p"&gt;;;&lt;/span&gt;
+        *&lt;span class="o"&gt;)&lt;/span&gt;
+            :
+            &lt;span class="p"&gt;;;&lt;/span&gt;
+    &lt;span class="k"&gt;esac&lt;/span&gt;
+&lt;span class="k"&gt;else&lt;/span&gt;
+    &lt;span class="nb"&gt;echo&lt;/span&gt; -e  &lt;span class="nv"&gt;$green&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$TESTBASH&lt;/span&gt;&lt;span class="s2"&gt; does not have any known shellshock-related vulnerabilities.&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt; &amp;gt;&lt;span class="p"&gt;&amp;amp;&lt;/span&gt;2
+    &lt;span class="nv"&gt;EXITCODE&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;0
+&lt;span class="k"&gt;fi&lt;/span&gt;
+&lt;span class="nb"&gt;echo&lt;/span&gt; -e &lt;span class="nv"&gt;$blue&lt;/span&gt;&lt;span class="s2"&gt;&amp;quot;NB: This script checks for common identified vulns only.. Please check online for more updated details&amp;quot;&lt;/span&gt;&lt;span class="nv"&gt;$normal&lt;/span&gt;
+&lt;span class="nb"&gt;exit&lt;/span&gt; &lt;span class="nv"&gt;$EXITCODE&lt;/span&gt;
+&lt;/pre&gt;&lt;/div&gt;</summary><category term="repost"></category><category term="Linux"></category><category term="security"></category></entry><entry><title>Exploring anti-DOS tools for Apache httpd</title><link href="http://prewired.pw/2014/09/exploring-anti-DOS-tools-for-Apache-httpd.html" rel="alternate"></link><updated>2014-09-13T18:28:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2014-09-13:2014/09/exploring-anti-DOS-tools-for-Apache-httpd.html</id><summary type="html">&lt;p&gt;Slowloris is among the well known "Denial Of Service" (or DOS) &lt;a href="http://resources.infosecinstitute.com/dos-attacks-free-dos-attacking-tools/"&gt;tool&lt;/a&gt; used by both experienced attackers and script kiddies. This evening, I've been testing &lt;em&gt;mod_evasion&lt;/em&gt; and &lt;em&gt;mod_antiloris&lt;/em&gt; on Apache httpd /2.2.15 (Oracle Linux 6.5 using Redhat built Kernel).&lt;/p&gt;
+&lt;h2&gt;First Setup:&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Server: 192.168.43.221 (running Apache httpd with &lt;em&gt;mod_evasion&lt;/em&gt; loaded)&lt;/li&gt;
+&lt;li&gt;Attacking Machine: 192.168.43.39 (Slowloris "DOSing" the server)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Apache httpd error logs&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Error from bad requests" src="/images/badheader.png" title="Apache error logs" /&gt;&lt;/p&gt;
+&lt;p&gt;The loaded module (&lt;em&gt;mod_evasion&lt;/em&gt;), can't save Apache httpd from the DOS attack, even loading the site from a browser is somehow impossible.&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Apache DOSed" src="/images/apachedown.png" title="Can't access via Browser" /&gt;&lt;/p&gt;
+&lt;p&gt;But this module can prevent a brute-force attack (&lt;em&gt;e.g. an automated script to guess a password field in a web-form&lt;/em&gt;) in a web server (running Apache httpd).&lt;/p&gt;
+&lt;p&gt;&lt;img alt="mod_evasion can prevent Brute-force.." src="/images/bruteforce.png" title="mod_evasion can prevent Brute-force attack" /&gt;&lt;/p&gt;
+&lt;p&gt;Just to make an interesting comparison, I replaced Apache httpd with Nginx on the same Server (192.168.43.221) and &lt;strong&gt;ta! da!..&lt;/strong&gt;
+&lt;img alt="Nginx is not DOSed by Slowloris" src="/images/nginxup.png" title="Nginx is not DOSed by Slowloris" /&gt; Nginx gracefully made it by ignoring the request from  Slowloris. But I noticed a brute-force attack is possible while using Nginx default settings! &lt;strong&gt;Nginx access logs&lt;/strong&gt;
+&lt;img alt="Nginx Brute-forced" src="/images/bfnginx.png" title="Nginx can be Brute-forced" /&gt;&lt;/p&gt;
+&lt;h2&gt;Second Setup:&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Server: 192.168.43.221 (running Apache httpd with mod_antiloris loaded)&lt;/li&gt;
+&lt;li&gt;Attacking Machine: 192.168.43.39 (Sowloris "DOSing" the server)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;em&gt;mod_antiloris&lt;/em&gt; played it nice by monitoring the requests coming from the client and rejected extra connections. Accessing the web services from the browser was not interfered.&lt;/p&gt;
+&lt;p&gt;&lt;img alt="mod_antiloris logs" src="/images/antiloris.png" title="mod_antiloris logs" /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;mod_evasion&lt;/em&gt; is cool but can't save Apache httpd from Slowloris. On the other hand, &lt;em&gt;mod_antiloris&lt;/em&gt; worked fine and denied Slowloris a chance to mess up with the Apache httpd server.&lt;/p&gt;
+&lt;h2&gt;Explanation:&lt;/h2&gt;
+&lt;p&gt;&lt;strong&gt;Putting the Lens on the Logs...&lt;/strong&gt; (Apache httpd access log)&lt;/p&gt;
+&lt;p&gt;&lt;img alt="Apache-httpd access log" src="/images/accesslog.png" title="Apache httpd access logs" /&gt;&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;Why did mod_antiloris pass the test and mod_evasion fail?..&lt;/em&gt; &lt;em&gt;Why did Slowloris work on Apache httpd and not on Nginx?&lt;/em&gt;&lt;/p&gt;
+&lt;p&gt;Apache httpd waits for a &lt;strong&gt;complete HTTP request header&lt;/strong&gt; to be received, this makes it good to serve web-content even in slow connections. So, by default, the timeout value is 300 seconds and it's reset each time the client sends more packets. Slowloris takes advantage by sending incomplete HTTP request headers and maintains the connection by sending more incomplete request headers resetting the time-out counter.&lt;/p&gt;
+&lt;p&gt;Slowloris is written in Perl, it simply plays around with &lt;strong&gt;CR (Carriage Return)&lt;/strong&gt; and &lt;strong&gt;LF (Line Feed)&lt;/strong&gt; at the end of every incomplete HTTP request header. A blank line after the request header is used to represent the completion of the header in HTTP. Since the request is incomplete and the timeout is 300 seconds, Apache httpd will keep the connection alive waiting for the remaining data, while Slowloris keeps on sending the incomplete HTTP requests resetting the timeout counter.&lt;/p&gt;
+&lt;p&gt;As a result, all available connections will be sucked up by Slowloris and cause a Denial of Service. mod_antiloris helped Apache httpd beat Slowloris but you can also use IPtables by setting a connection limit or putting Apache httpd behind Varnish. Another solution I've not tested is using a Hardware Load Balancer that only accepts full HTTP connections.&lt;/p&gt;
+&lt;p&gt;Nginx uses a much more event-driven (asynchronous) architecture that can be scaled, instead of the "Maximum Connections" as in Apache httpd. So, in a nutshell, Nginx ignores the requests from Slowloris and processes other "full" connections.&lt;/p&gt;
+&lt;p&gt;This is not to claim that Nginx is bullet proof by default, tools like &lt;a href="https://github.com/valyala/goloris"&gt;golris&lt;/a&gt; can mess with your Nginx server (when running with default settings), though you can always protect this from happening by using Nginx "Http limit connection" module / IPtables / deny POST requests or patch Nginx, so it drops connection if the client sends POST body at a very slow rate.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;But I'll always go with Nginx whenever possible!&lt;/strong&gt;&lt;/p&gt;
+&lt;h3&gt;Conclusion&lt;/h3&gt;
+&lt;p&gt;I think Apache httpd should find a way of prioritizing clients sending full HTTP requests to minimize DOS attacks of the (above) described nature...&lt;/p&gt;
+&lt;p&gt;Ciao! &lt;/p&gt;</summary><category term="linux"></category><category term="security"></category><category term="httpd"></category><category term="nginx"></category></entry><entry><title>The "SCTP" protocol</title><link href="http://prewired.pw/2014/09/SCTP-protocol.html" rel="alternate"></link><updated>2014-09-07T12:28:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2014-09-07:2014/09/SCTP-protocol.html</id><summary type="html">&lt;p&gt;TCP and UDP protocols have been in around for approximately 20+ years now. Even though they have helped in building nice Internet applications since inception, things are changing in the techie world and they will always change. TCP being a connection state protocol while UDP a connectionless state protocol, there have been attempts to build a general purpose protocol above the IP layer, SCTP so far is the only one endorsed by the IETF.&lt;/p&gt;
+&lt;p&gt;SCTP combines concepts from TCP and UDP for even better control over the transport of packets (with additional API calls for SCTP). TCP applications can be ported to SCTP.&lt;/p&gt;
+&lt;h3&gt;Some cool Features:&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;More Support for multi-homed devices:&lt;/strong&gt; 
+Laptops these days can come with more than one in-built Ethernet cards, wireless cards, wiMAX cards and Bluetooth... Hence, a minimal laptop can at-least have 3 distinct IP network interfaces. SCTP support selective choosing of interfaces with ability to add and drop interfaces dynamically. You can unplug your machine from an Ethernet network, and an Internet application immediately pick up with existing wifi connection etc.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Whoo! Multi-streaming:&lt;/strong&gt;
+An application doesn't need multiple sockets rather a single socket that can be used for multiple streams to a connected host! Let's say the X Window System is connecting on multiple ports, with SCTP, these could all be separate streams on a single association. Fast-Browsing!, HTML docs containing referenced image files or other media files, they will load faster with SCTP compared in TCP. HTTP use separate TCP connection per downloaded URL, even with HTTP 1.1 "persistent connections" it's still expensive. With SCTP, the separate media files could be downloaded concurrently in separate streams on a single association.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;No “out of band”... :&lt;/strong&gt; 
+SCTP has no “out of band” messages, but a large number of events can be interleaved onto a single association, so that an application can monitor the state of the association (e.g. when the other end adds another interface to the association).&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Greater socket range:&lt;/strong&gt; 
+The range of socket options is greater than TCP or UDP. These also can be used to control individual associations or individual streams within a single association. For example, messages on one stream can be given a longer time-to-live than messages on other streams, increasing the likelihood of their delivery.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Do more with single socket:&lt;/strong&gt; 
+A single socket can support multiple associations, that is, a computer can use a single socket to talk to more than one computer. This is not multicast, but it could be useful in peer-to-peer situations&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;Still message-oriented.. :&lt;/strong&gt; 
+TCP is a byte-oriented protocol, and UDP is message-oriented. The majority of applications are message-oriented, and applications using TCP have to jump through hoops, such as sending the message length as a first parameter. SCTP is message-oriented, so such tricks are not so necessary.&lt;/p&gt;
+&lt;p&gt;It is no longer necessary to open up multiple sockets; instead, a single socket can be used for multiple streams to a connected host. SCTP tries to provide a more reliable and robust protocol than either TCP or UDP. Btw, SCTP is not in any Microsoft release, another reason to love Linux? :)&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3&gt;Resources&lt;/h3&gt;
+&lt;p&gt;The Main Site for SCTP - &lt;a href="http://www.sctp.de/"&gt;http://www.sctp.de/&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;The Linux Kernel Project Home Page - &lt;a href="https://lists.sourceforge.net/lists/listinfo/lksctp-developers"&gt;https://lists.sourceforge.net/lists/listinfo/lksctp-developers&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;Stream Control Transmission Protocol - &lt;a href="http://en.wikipedia.org/wiki/Stream_Control_Transmission_Protocol"&gt;http://en.wikipedia.org/wiki/Stream_Control_Transmission_Protocol&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;Overview of SCTP (Stream Control Transmission Protocol) - &lt;a href="http://www.slideshare.net/PeterREgli/overview-of-sctp-transport-protocol"&gt;http://www.slideshare.net/PeterREgli/overview-of-sctp-transport-protocol&lt;/a&gt;&lt;/p&gt;</summary><category term="repost"></category></entry><entry><title>Setting up SSH With Two-Factor Authentication</title><link href="http://prewired.pw/2014/08/SSH-with-2FA.html" rel="alternate"></link><updated>2014-08-19T09:00:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2014-08-19:2014/08/SSH-with-2FA.html</id><summary type="html">&lt;p&gt;Two-factor authentication adds a second level of authentication to an account log-in. When you have to enter only your username and one password, that's considered as a single-factor authentication. 2FA requires the user to have two out of three types of credentials before being able to access an account. The three types are:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Something you know, such as a Personal Identification Number (PIN), password, or a pattern&lt;/li&gt;
+&lt;li&gt;Something you have, such as an ATM card or phone&lt;/li&gt;
+&lt;li&gt;Something you are, such as a biometric like a fingerprint or voice print&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;a href="http://www.cnet.com"&gt;Source: cnet.com&lt;/a&gt;&lt;/p&gt;
+&lt;hr /&gt;
+&lt;p&gt;Well, with SSH we can use Google Authenticator PAM module to add another level of security to the normal login. This can be a good idea if you have a cloud instance such as AWS services. I personally would like to endorse both our local robust cloud infrastructure built to support a wide range of applications, &lt;a href="http://www.kili.io"&gt;KILI&lt;/a&gt; and &lt;a href="http://www.angani.co"&gt;Angani&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;Before setting up the 2FA, make sure you have the &lt;code&gt;google authenticator&lt;/code&gt; app installed on your phone, you can get support on how to install the app on Android, Blackberry or Apple device &lt;a href="https://support.google.com/accounts/answer/1066447?hl=en"&gt;here&lt;/a&gt;&lt;/p&gt;
+&lt;p&gt;Now, decide which account you want to setup the 2FA for, I mean, if you use a normal account, you'll not be able to login as root. (I love root :D ). If you love root like me, login as root and follow along. I've my "google authenticator" app installed on my crappy Samsung phone running Android 4.2.2 and I'm setting up 2FA on Ubuntu 14.x&lt;/p&gt;
+&lt;hr /&gt;
+&lt;h3&gt;1) Install required applications&lt;/h3&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;apt-get install libpam-google-authenticator
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;On CentOS you will need to install &lt;code&gt;libpam-google-authenticator&lt;/code&gt; from the source file.&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;yum -y groupinstall &lt;span class="s2"&gt;&amp;quot;Development Tools&amp;quot;&lt;/span&gt;
+&lt;span class="nv"&gt;$ &lt;/span&gt;yum install pam-devel
+&lt;span class="nv"&gt;$ &lt;/span&gt;yum -y install ntp
+&lt;span class="nv"&gt;$ &lt;/span&gt;wget https://google-authenticator.googlecode.com/files/libpam-google-authenticator-1.0-source.tar.bz2
+&lt;span class="nv"&gt;$ &lt;/span&gt;bunzip2 libpam-google-authenticator-1.0-source.tar.bz2
+&lt;span class="nv"&gt;$ &lt;/span&gt;tar -xvf libpam-google-authenticator-1.0-source.tar
+&lt;span class="nv"&gt;$ &lt;/span&gt;&lt;span class="nb"&gt;cd &lt;/span&gt;libpam-google-authenticator-1.0/
+&lt;span class="nv"&gt;$ &lt;/span&gt;make
+&lt;span class="nv"&gt;$ &lt;/span&gt;make install
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;h3&gt;2) Set up config files&lt;/h3&gt;
+&lt;p&gt;a) Open &lt;code&gt;/etc/pam.d/sshd&lt;/code&gt; with your favourite editor and add the following line &lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;auth required pam_google_authenticator.so
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;Make sure to save the changes.&lt;/p&gt;
+&lt;p&gt;b) Then open &lt;code&gt;/etc/ssh/sshd_config&lt;/code&gt; with your favourite file editor (again) and search for &lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;ChallengeResponseAuthentication no
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;replace the &lt;code&gt;no&lt;/code&gt; with a &lt;code&gt;yes&lt;/code&gt; and save the changes.&lt;/p&gt;
+&lt;h3&gt;3) Setup the google-authenticator&lt;/h3&gt;
+&lt;p&gt;Still on the account to set-up, enter the command on the terminal:&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;&lt;span class="nv"&gt;$ &lt;/span&gt;google-authenticator
+&lt;/pre&gt;&lt;/div&gt;
+
+
+&lt;p&gt;This will enable you setup the google-authenticator through a series of yes (y) and no (n) questions. 
+Make sure you select &lt;code&gt;time-based&lt;/code&gt; for   better security service, and save updates in the default file... 
+You can follow along the other questions (they are easy peasy and depends with your preferences).&lt;/p&gt;
+&lt;p&gt;NB: after chosing &lt;code&gt;Y&lt;/code&gt; in the first option (authentication tokens to be time-based), a new secret key, 
+verification code and an emergency scratch codes are generated with barcode also. &lt;/p&gt;
+&lt;p&gt;After setting up the options to your preference(s), restart the ssh-server:
+&lt;code&gt;$ service ssh restart&lt;/code&gt;&lt;/p&gt;
+&lt;p&gt;Make sure on your system, the time is correctly set with the same time zone on your phone. I don't want to overemphasis on this, but you     need ntpd runninig on your system. &lt;/p&gt;
+&lt;p&gt;On Ubuntu &lt;code&gt;$ apt-get install ntp&lt;/code&gt; while on CentOS &lt;code&gt;$ yum -y install ntp&lt;/code&gt; then start &lt;code&gt;$ ntpd&lt;/code&gt; and enable it on System boot.&lt;/p&gt;
+&lt;h3&gt;4) Linking the APP on our    phone...&lt;/h3&gt;
+&lt;p&gt;Open the google-authenticator app on your phone and select the &lt;em&gt;add on account&lt;/em&gt; option, then tap on the &lt;em&gt;Enter key provided&lt;/em&gt; and enter your secret key.&lt;/p&gt;
+&lt;p&gt;NB: You can choose &lt;em&gt;scan a barcode&lt;/em&gt; and scan the generated barcode but that didn't work for me.&lt;/p&gt;
+&lt;h3&gt;5) Now test the set up....&lt;/h3&gt;
+&lt;p&gt;Try login from a diffrent computer... You should get a verification prompt before the password/login-in for guys using ssh-keys.
+&lt;em&gt;Done!!&lt;/em&gt;&lt;/p&gt;</summary><category term="repost"></category><category term="Linux"></category></entry><entry><title>Disk benchmark with bonnie in Linux</title><link href="http://prewired.pw/2014/06/disk-benchmark.html" rel="alternate"></link><updated>2014-06-24T08:00:00+03:00</updated><author><name>John Troon</name></author><id>tag:prewired.pw,2014-06-24:2014/06/disk-benchmark.html</id><summary type="html">&lt;p&gt;&lt;em&gt;bonnie++&lt;/em&gt; is a different tool compared to other disk testing tools, which are probably included in other performance monitoring tools like &lt;code&gt;vmstat&lt;/code&gt; just to mention the most common one on any Linux install.&lt;/p&gt;
+&lt;p&gt;It runs a performance test of the filesystem I/O and uses C library calls hence simulating non exaggerated results. It writes 8KB blocks to estimate maximum sustained rate of transfer. To make results interesting and reliable, it cycles through rewriting and rereading to provide BEST simulation of filesystem usage.&lt;/p&gt;
+&lt;p&gt;After installing bonnie, all the details of the tests performed by Bonnie++ are contained in the file. &lt;code&gt;/usr/share/doc/bonnie++/readme.html&lt;/code&gt;&lt;/p&gt;
+&lt;p&gt;For more details on usage, use &lt;code&gt;man bonnie++&lt;/code&gt;&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;NB: Despite the fact his tool is to aid in detecting bottlenecks with the Disks, it can cause a serious I/O contention while running. So don't run it on a production system that is live.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;Below is an output from my Desktop with a T4300 dual processor (2100 MHz, Bus speed 800 MHz; GNU/Linux 3.13.0-27-generic Kernel, x86_64).&lt;/p&gt;
+&lt;hr /&gt;
+&lt;div class="highlight"&gt;&lt;pre&gt;Writing a byte at a &lt;span class="nb"&gt;time&lt;/span&gt;…done
+Writing intelligently…done
+Rewriting…done
+Reading a byte at a &lt;span class="nb"&gt;time&lt;/span&gt;…done
+Reading intelligently…done
+start ‘em…done…done…done…done…done…
+Create files in sequential order…done.
+Stat files in sequential order…done.
+Delete files in sequential order…done.
+Create files in random order…done.
+Stat files in random order…done.
+Delete files in random order…done.
+Version 1.97 ——Sequential Output—— –Sequential Input- –Random-
+Concurrency &lt;span class="m"&gt;1&lt;/span&gt; -Per Chr- –Block– -Rewrite- -Per Chr- –Block– –Seeks–
+Machine Size K/sec %CP K/sec %CP K/sec %CP K/sec %CP K/sec %CP /sec %CP
+warlord 4G &lt;span class="m"&gt;232&lt;/span&gt; &lt;span class="m"&gt;97&lt;/span&gt; &lt;span class="m"&gt;47643&lt;/span&gt; &lt;span class="m"&gt;12&lt;/span&gt; &lt;span class="m"&gt;14893&lt;/span&gt; &lt;span class="m"&gt;4&lt;/span&gt; &lt;span class="m"&gt;819&lt;/span&gt; &lt;span class="m"&gt;99&lt;/span&gt; &lt;span class="m"&gt;35599&lt;/span&gt; &lt;span class="m"&gt;4&lt;/span&gt; 89.7 2
+Latency 70015us 1807ms 1637ms 33484us 235ms 667ms
+Version 1.97 ——Sequential Create—— ——–Random Create——–
+warlord -Create– –Read— -Delete– -Create– –Read— -Delete–
+files /sec %CP /sec %CP /sec %CP /sec %CP /sec %CP /sec %CP
+&lt;span class="m"&gt;16&lt;/span&gt; &lt;span class="m"&gt;9025&lt;/span&gt; &lt;span class="m"&gt;21&lt;/span&gt; +++++ +++ &lt;span class="m"&gt;26989&lt;/span&gt; &lt;span class="m"&gt;51&lt;/span&gt; &lt;span class="m"&gt;23112&lt;/span&gt; &lt;span class="m"&gt;52&lt;/span&gt; +++++ +++ &lt;span class="m"&gt;26063&lt;/span&gt; 52
+Latency 84074us 966us 1410us 118us 2034us 2684us
+1.97,1.97,warlord,1,1402393673,4G,,232,97,47643,12,14893,4,819,99,35599,4,89.7,2,16,,,,,
+
+9025,21,+++++,+++,26989,51,23112,52,+++++,+++,26063,52,70015us,1807ms,1637ms,
+
+33484us,235ms,667ms,84074us,966us,1410us,118us,2034us,2684us
+&lt;/pre&gt;&lt;/div&gt;</summary><category term="repost"></category><category term="Linux"></category></entry></feed>

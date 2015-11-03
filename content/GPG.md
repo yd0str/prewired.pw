@@ -38,14 +38,14 @@ Summary: I'm slowly transiting from my old GnuPG keys to a new one.
 To fetch the full new key from a public key server using GnuPG, run:
 
 ```bash
-	gpg --keyserver keys.gnupg.net --recv-key 0x7B85A886AD3A484C
+	$ gpg --keyserver keys.gnupg.net --recv-key 0x7B85A886AD3A484C
 ```
 
 If you have already validated my old key, you can then validate that the
 new key is signed by my old key:
 
 ```bash
-	gpg --check-sigs 0x7B85A886AD3A484C
+	$ gpg --check-sigs 0x7B85A886AD3A484C
 ```
 Just incase you need to clarify anything about my GnuPG keys, reach me via **jayombagi at gmail dot com**
 

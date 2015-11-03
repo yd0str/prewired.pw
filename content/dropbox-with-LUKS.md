@@ -21,15 +21,15 @@ Install Dropbox, head over to [Dropbox's site](https://www.dropbox.com/install?o
 ```bash
 32-bit:
 
-cd ~ && wget -O - "https://www.dropbox.com/download?plat=lnx.x86" | tar xzf -
+$ cd ~ && wget -O - "https://www.dropbox.com/download?plat=lnx.x86" | tar xzf -
 
 64-bit:
 
-cd ~ && wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar xzf -
+$ cd ~ && wget -O - "https://www.dropbox.com/download?plat=lnx.x86_64" | tar xzf -
 
 Next, run the Dropbox daemon from the newly created .dropbox-dist folder.
 
-~/.dropbox-dist/dropboxd
+$ ~/.dropbox-dist/dropboxd
 ```
 
 ###Step Two:
@@ -42,34 +42,33 @@ Download [Luks-Ops](https://github.com/JohnTroony/LUKS-OPs/releases), a script t
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/JohnTroony/LUKS-OPs.git
-cd LUKS-OPs
+$ git clone https://github.com/JohnTroony/LUKS-OPs.git
+$ cd LUKS-OPs
 
 # 2. Change to super user
-sudo su 
+$ sudo su 
 
 # 3. Copy the script to /bin  as luksOps
-cp luks-ops.sh /bin/luksOps 
+$ cp luks-ops.sh /bin/luksOps 
 
 # 4. Move into the Dropbox folder to create the LUKS container
-cd /home/user/Dropbox 
+$ cd /home/user/Dropbox 
 
 # 5. Create a LUKS container but don't mount it, DISKNAME is the label, 1000 is size in MB
-luksOps new DISKNAME 1000
+$ luksOps new DISKNAME 1000
 
 # 6. Move the created LUKS container (DISKNAME) to /home/user/Dropbox
-mv /usr/DISKNAME .
+$ mv /usr/DISKNAME .
 
 # 7. Mount the LUKS container. This will ask for the pass phrase.
-luksOps mount DISKNAME
+$ luksOps mount DISKNAME
 
 # 8. Add files to the Mounted LUKS container then use the following command to exit
-luksOps unmount-all
+$ luksOps unmount-all
 
 ```
 
-That is all, once you have the LUKS container in the ```~/Dropbox``` folder, you can always mount it, add files (You wouldn't want to be adding and removing large multimedia files to the container though.
-), unmount it and let Dropbox sync the changes!
+That is all, once you have the LUKS container in the ```$ ~/Dropbox``` folder, you can always mount it, add files (You wouldn't want to be adding and removing large multimedia files to the container though.), unmount it and let Dropbox sync the changes!
 
 
 

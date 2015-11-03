@@ -29,20 +29,20 @@ Now, decide which account you want to setup the 2FA for, I mean, if you use a no
 ### 1) Install required applications
 
 ```bash
-apt-get install libpam-google-authenticator
+$ apt-get install libpam-google-authenticator
 ```
 On CentOS you will need to install `libpam-google-authenticator` from the source file.
 
 ```bash
-yum -y groupinstall "Development Tools"
-yum install pam-devel
-yum -y install ntp
-wget https://google-authenticator.googlecode.com/files/libpam-google-authenticator-1.0-source.tar.bz2
-bunzip2 libpam-google-authenticator-1.0-source.tar.bz2
-tar -xvf libpam-google-authenticator-1.0-source.tar
-cd libpam-google-authenticator-1.0/
-make
-make install
+$ yum -y groupinstall "Development Tools"
+$ yum install pam-devel
+$ yum -y install ntp
+$ wget https://google-authenticator.googlecode.com/files/libpam-google-authenticator-1.0-source.tar.bz2
+$ bunzip2 libpam-google-authenticator-1.0-source.tar.bz2
+$ tar -xvf libpam-google-authenticator-1.0-source.tar
+$ cd libpam-google-authenticator-1.0/
+$ make
+$ make install
 ```
 
 ### 2) Set up config files
@@ -68,7 +68,7 @@ replace the `no` with a `yes` and save the changes.
 Still on the account to set-up, enter the command on the terminal:
 
 ```
-google-authenticator
+$ google-authenticator
 ```
 
 This will enable you setup the google-authenticator through a series of yes (y) and no (n) questions. 
@@ -79,11 +79,11 @@ NB: after chosing `Y` in the first option (authentication tokens to be time-base
 verification code and an emergency scratch codes are generated with barcode also. 
 
 After setting up the options to your preference(s), restart the ssh-server:
-`service ssh restart`
+`$ service ssh restart`
 
 Make sure on your system, the time is correctly set with the same time zone on your phone. I don't want to overemphasis on this, but you 	 need ntpd runninig on your system. 
 
-On Ubuntu `apt-get install ntp` while on CentOS `yum -y install ntp` then start `ntpd` and enable it on System boot.
+On Ubuntu `$ apt-get install ntp` while on CentOS `$ yum -y install ntp` then start `$ ntpd` and enable it on System boot.
 
 ### 4) Linking the APP on our	 phone...
 
