@@ -56,7 +56,7 @@ Also the location of an item in the file on disk will often differ from its loca
 
 The default page size for Windows is 4096 bytes (1000h) and it would be wasteful to align executables to a 4Kb page boundary on disk as that would make them significantly bigger than necessary. Because of this, the PE header has two different alignment fields; Section alignment and file alignment. Section alignment is how sections are aligned in memory as above. File alignment (usually 512 bytes or 200h) is how sections are aligned in the file on disk and is a multiple of disk sector size in order to optimize the loading process.
 
-Since we want to add executable code on the file, we are interested with the `Executable Section`, which in our case is `CODE`. Comparing the `VSize` (Virtual-size) to `Rsize` ( Raw-size), we realize the Section `CODE` is a little bit large on disk compared to when it's mapped in memory.
+Since we want to add executable code on the file, we are interested with the `Executable Section`, which in our case is the`CODE`. Comparing the `VSize` (Virtual-size) to `Rsize` ( Raw-size), we realize the Section `CODE` is a little bit large on disk compared to when it's mapped in memory.
 ![Section CODE ](/images/step3-highlighted.png "Executable Section, CODE")
 
 This means the section `CODE` is padded with 00 at the end while on disk. This is where we are interested to add our code..... In other words, we have found a cave we can use.
@@ -151,7 +151,7 @@ Another window will pop out, close it and you should see a similar window as the
 ![Add code](/images/addasm5.png "Add code")
 
 
-We are almost done, we will change the EntryPoint to the address that has our new code and return back to the original EntryPoint i.e 0000A5F8. after execution of the added code. On LordPE change EntryPoint to 0000AD40 i.e. `0040AD40 - ImageBase(00400000)` and click on save.
+We are almost done, we will change the EntryPoint to the address that has our new code and return back to the original EntryPoint i.e 0000A5F8 after execution of the added code. On LordPE change EntryPoint to 0000AD40 i.e. `0040AD40 - ImageBase (00400000)` and click on save.
 
 ![New EntryPoint](/images/newEPx.png "New EntryPoint")
 
@@ -169,7 +169,7 @@ Awesome, now lets test the modified binary on a running XP SP3. We expect it to 
 
 ![Run on Windows](/images/run2.png "Application when on XP SP3")
 
-We are done! I'll create some time and do part-two using a different Executable. Think of all the cool things you can incorporate... Don't be limited to this guide, do more reading and think outside the box :P 
+We are done! I'll create some time and do part-two using a different executable. Think of all the cool things you can incorporate... Don't be limited to this guide, do more reading and think outside the box :P 
 
 For example, you can generate a shellcode using Metasploit and use it instead of the 16 bytes Calc.exe shellcode and instead of hijacking the EntryPoint, you can hijack any jmp instruction to your shellcode and return to the original jmp address etc
 
@@ -180,6 +180,7 @@ References:
 * [The Beginners Guide to Codecaves](http://www.codeproject.com/Articles/20240/The-Beginners-Guide-to-Codecaves)
 * [pecoff v8 (PDF)](https://zeros.googlecode.com/files/pecoff_v8.pdf)
 * [Welcome to theForger's Win32 API Tutorial (zip file)](http://bit.ly/WP9vgm)
+* [The BackDoor Factory](https://github.com/secretsquirrel/the-backdoor-factoryo\)
 * [HxD - Freeware Hex Editor and Disk Editor](http://mh-nexus.de/en/hxd)
 * For Tools and other files I've used, check my [Git repositoryy](https://github.com/JohnTroony/PE-CodeCaving)
 
