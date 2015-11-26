@@ -27,7 +27,7 @@ There can only be one reason, a reason that can qualify as a sound theory. The g
 The above video was published on Feb 15, 2013. The only reason why the guy seen on the video was recored by the camera is due to the position of the camera and the angle at which the light is beaming from, the same thing that happened with "demon caught on tape", Citizen TV camera was positioned in a way they could get a glimpse of a moving object recorded... 
 
 
-Now just to sink in the point and bring you closer to this awesome theory of "Invisible Clock", below are some links to similar project and news from credible sources on possibility of having such suits developed by the military... It's no longer a secret!
+Now just to sink in the point and bring you closer to this awesome theory of "Invisible Cloak", below are some links to similar project and news from credible sources on possibility of having such suits developed by the military... It's no longer a secret!
 
 Sources:
 

@@ -180,9 +180,9 @@ References:
 * [The Beginners Guide to Codecaves](http://www.codeproject.com/Articles/20240/The-Beginners-Guide-to-Codecaves)
 * [pecoff v8 (PDF)](https://zeros.googlecode.com/files/pecoff_v8.pdf)
 * [Welcome to theForger's Win32 API Tutorial (zip file)](http://bit.ly/WP9vgm)
-* [The BackDoor Factory](https://github.com/secretsquirrel/the-backdoor-factoryo\)
+* [The BackDoor Factory](https://github.com/secretsquirrel/the-backdoor-factory)
 * [HxD - Freeware Hex Editor and Disk Editor](http://mh-nexus.de/en/hxd)
-* For Tools and other files I've used, check my [Git repositoryy](https://github.com/JohnTroony/PE-CodeCaving)
+* For Tools and other files I've used, check my [Git repository](https://github.com/JohnTroony/PE-CodeCaving)
 
 
 
